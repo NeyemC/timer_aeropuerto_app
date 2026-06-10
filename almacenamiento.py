@@ -1,23 +1,27 @@
 """
 Persistencia local (JSON) y exportación a CSV.
-En Android guarda en /sdcard/tiempos_aeropuerto (visible en el explorador).
+En Android guarda en /storage/emulated/0/Android/data/<pkg>/files/tiempos_aeropuerto
+(visible en explorador de archivos, sin necesidad de permisos en Android 10+).
 En Windows/Mac guarda en ~/tiempos_aeropuerto.
 """
 
 import json
 import csv
 import os
+import re as _re
 from datetime import datetime
 from pathlib import Path
 from modelos import Sesion, Pasajero, TIPOS
 
-# En Android /sdcard y /storage/emulated/0 son el almacenamiento
-# interno del usuario (visible en el explorador), no requieren SD física.
-_android_roots = [Path("/storage/emulated/0"), Path("/sdcard")]
-_android_root = next((p for p in _android_roots if p.exists()), None)
-CARPETA_DATOS = (_android_root / "tiempos_aeropuerto") if _android_root \
-    else (Path.home() / "tiempos_aeropuerto")
-CARPETA_DATOS.mkdir(exist_ok=True)
+# En Android el app corre en /data/user/0/<pkg>/ o /data/data/<pkg>/
+# Usamos la carpeta interna del app (files/) que siempre es escribible.
+# En Windows/Mac usamos ~/tiempos_aeropuerto.
+_android_match = _re.search(r'^(/data/(?:user/\d+|data)/[^/]+)', str(Path(__file__)))
+if _android_match:
+    CARPETA_DATOS = Path(_android_match.group(1)) / "files" / "tiempos_aeropuerto"
+else:
+    CARPETA_DATOS = Path.home() / "tiempos_aeropuerto"
+CARPETA_DATOS.mkdir(parents=True, exist_ok=True)
 
 
 def ruta_sesion(sesion_id: str) -> Path:
