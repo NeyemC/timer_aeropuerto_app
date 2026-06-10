@@ -1,7 +1,7 @@
 """
 Persistencia local (JSON) y exportación a CSV.
-Los archivos se guardan en ~/tiempos_aeropuerto/ para que sean accesibles
-en la tablet sin instalar nada extra.
+En Android guarda en /sdcard/tiempos_aeropuerto (visible en el explorador).
+En Windows/Mac guarda en ~/tiempos_aeropuerto.
 """
 
 import json
@@ -11,8 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from modelos import Sesion, Pasajero, TIPOS
 
-# Carpeta base de datos
-CARPETA_DATOS = Path.home() / "tiempos_aeropuerto"
+# Detectar Android por la existencia de /sdcard
+if Path("/sdcard/Android").exists():
+    CARPETA_DATOS = Path("/sdcard/tiempos_aeropuerto")
+else:
+    CARPETA_DATOS = Path.home() / "tiempos_aeropuerto"
 CARPETA_DATOS.mkdir(exist_ok=True)
 
 
