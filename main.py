@@ -1,31 +1,13 @@
 """
 App de Tiempos de Proceso Aeroportuarios
-=========================================
-Uso: python main.py
-Compilar a APK: flet build apk (requiere Android SDK)
-
-Flujo principal:
-  1. Pantalla de configuración de sesión (aeropuerto, encuestador)
-  2. Pantalla principal con tarjetas de pasajeros activos
-  3. Diálogo "Nuevo pasajero" → seleccionar tipo + datos básicos
-  4. Diálogo "Completar" → ingresar datos extra al terminar etapas
-  5. Exportar CSV al terminar la jornada
 """
 
+import asyncio
 import flet as ft
-from datetime import datetime
-import threading
-import time as time_module
 
-from modelos import (
-    Sesion, Pasajero,
-    TIPOS, LINEAS_AEREAS, AEROPUERTOS,
-)
+from modelos import Sesion, Pasajero, TIPOS, LINEAS_AEREAS, AEROPUERTOS
 from almacenamiento import guardar, exportar_csv
 
-# ---------------------------------------------------------------------------
-# Paleta de colores por tipo de observación
-# ---------------------------------------------------------------------------
 COLOR_TIPO = {
     "counter":       ft.Colors.BLUE_700,
     "autochequeo":   ft.Colors.GREEN_700,
@@ -33,737 +15,511 @@ COLOR_TIPO = {
     "internacional": ft.Colors.PURPLE_700,
 }
 
-COLOR_TIPO_SUAVE = {
-    "counter":       ft.Colors.BLUE_50,
-    "autochequeo":   ft.Colors.GREEN_50,
-    "equipaje":      ft.Colors.ORANGE_50,
-    "internacional": ft.Colors.PURPLE_50,
-}
+
+def _borde(w, color):
+    s = ft.BorderSide(w, color)
+    return ft.Border(left=s, top=s, right=s, bottom=s)
 
 
-# ===========================================================================
-# Función principal de la app
-# ===========================================================================
-
-def main(page: ft.Page):
-    page.title = "Tiempos de Proceso – Aeropuerto"
+async def main(page: ft.Page):
+    page.title = "Tiempos Aeropuerto"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
-    page.bgcolor = ft.Colors.GREY_100
 
-    # Estado de la sesión activa
-    sesion: list[Sesion | None] = [None]   # lista de 1 elemento para mutarlo en closures
+    sesion:       list[Sesion | None] = [None]
+    tarjetas_ref: dict[str, ft.Text]  = {}
+    timer_id = [0]
 
-    # -----------------------------------------------------------------------
-    # PANTALLA 1: CONFIGURACIÓN DE SESIÓN
-    # -----------------------------------------------------------------------
+    # ── diálogos ──────────────────────────────────────────────────────────
+    def abrir_dialogo(dlg): page.show_dialog(dlg)
+    def cerrar_dialogo():   page.pop_dialog()
 
+    # ── pantalla de setup ──────────────────────────────────────────────────
     def mostrar_setup():
-        campo_encuestador = ft.TextField(
-            label="Nombre del encuestador",
-            hint_text="Ej: Juan Pérez",
-            prefix_icon=ft.Icons.PERSON,
-            autofocus=True,
-            border_radius=12,
-        )
-
-        dd_aeropuerto = ft.Dropdown(
+        campo = ft.TextField(
+            label="Nombre del encuestador", hint_text="Ej: Juan Pérez",
+            prefix_icon=ft.Icons.PERSON, autofocus=True, border_radius=12)
+        dd = ft.Dropdown(
             label="Aeropuerto",
             options=[ft.dropdown.Option(a) for a in AEROPUERTOS],
-            border_radius=12,
-        )
+            border_radius=12)
+        error = ft.Text("", color=ft.Colors.RED_700, size=13)
 
-        texto_error = ft.Text("", color=ft.Colors.RED_700, size=13)
-
-        def iniciar_sesion(e):
-            if not campo_encuestador.value or not dd_aeropuerto.value:
-                texto_error.value = "Completa todos los campos para continuar."
+        async def iniciar(e):
+            if not campo.value or not dd.value:
+                error.value = "Completa todos los campos."
                 page.update()
                 return
-            sesion[0] = Sesion(
-                aeropuerto=dd_aeropuerto.value,
-                encuestador=campo_encuestador.value.strip(),
-            )
+            sesion[0] = Sesion(aeropuerto=dd.value,
+                               encuestador=campo.value.strip())
             guardar(sesion[0])
             mostrar_principal()
 
-        page.views.clear()
-        page.views.append(
-            ft.View(
-                route="/setup",
-                bgcolor=ft.Colors.WHITE,
-                padding=0,
-                controls=[
-                    ft.Container(
-                        expand=True,
-                        alignment=ft.alignment.center,
-                        padding=ft.padding.symmetric(horizontal=40, vertical=60),
-                        content=ft.Column(
-                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                            spacing=24,
-                            controls=[
-                                ft.Icon(ft.Icons.FLIGHT, size=72, color=ft.Colors.BLUE_700),
-                                ft.Text(
-                                    "Tiempos de Proceso\nAeroportuarios",
-                                    size=28,
-                                    weight=ft.FontWeight.BOLD,
-                                    text_align=ft.TextAlign.CENTER,
-                                    color=ft.Colors.BLUE_900,
-                                ),
-                                ft.Text(
-                                    "Configura la sesión antes de comenzar",
-                                    size=16,
-                                    color=ft.Colors.GREY_600,
-                                    text_align=ft.TextAlign.CENTER,
-                                ),
-                                ft.Divider(height=8),
-                                dd_aeropuerto,
-                                campo_encuestador,
-                                texto_error,
-                                ft.ElevatedButton(
-                                    "Iniciar Jornada",
-                                    icon=ft.Icons.PLAY_ARROW,
-                                    on_click=iniciar_sesion,
-                                    style=ft.ButtonStyle(
-                                        padding=ft.padding.symmetric(horizontal=40, vertical=20),
-                                        shape=ft.RoundedRectangleBorder(radius=12),
-                                    ),
-                                    bgcolor=ft.Colors.BLUE_700,
-                                    color=ft.Colors.WHITE,
-                                ),
-                            ],
+        page.floating_action_button = None
+        page.bgcolor = ft.Colors.WHITE
+        page.controls.clear()
+        page.controls.append(
+            ft.Container(
+                expand=True, alignment=ft.Alignment(0, 0),
+                padding=ft.Padding(40, 60, 40, 60),
+                content=ft.Column(
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=24,
+                    controls=[
+                        ft.Icon(ft.Icons.FLIGHT, size=72,
+                                color=ft.Colors.BLUE_700),
+                        ft.Text("Tiempos de Proceso\nAeroportuarios",
+                                size=28, weight=ft.FontWeight.BOLD,
+                                text_align=ft.TextAlign.CENTER,
+                                color=ft.Colors.BLUE_900),
+                        ft.Text("Configura la sesión antes de comenzar",
+                                size=16, color=ft.Colors.GREY_600,
+                                text_align=ft.TextAlign.CENTER),
+                        ft.Divider(height=8),
+                        dd, campo, error,
+                        ft.FilledButton(
+                            "Iniciar Jornada", icon=ft.Icons.PLAY_ARROW,
+                            on_click=iniciar,
+                            style=ft.ButtonStyle(
+                                padding=ft.Padding(40, 20, 40, 20),
+                                shape=ft.RoundedRectangleBorder(radius=12),
+                                bgcolor=ft.Colors.BLUE_700,
+                                color=ft.Colors.WHITE,
+                            ),
                         ),
-                    )
-                ],
+                    ],
+                ),
             )
         )
-        page.go("/setup")
+        page.update()
 
-    # -----------------------------------------------------------------------
-    # PANTALLA 2: PRINCIPAL (lista de pasajeros activos)
-    # -----------------------------------------------------------------------
-
-    tarjetas_ref: dict[str, ft.Ref] = {}   # id_pasajero → refs para actualizar
-
+    # ── pantalla principal ─────────────────────────────────────────────────
     def mostrar_principal():
         s = sesion[0]
+        timer_id[0] += 1
+        tarjetas_ref.clear()
 
-        # --- Encabezado ---
+        # columna persistente: se actualizan sus controls en place
+        lista_col = ft.Column(
+            spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
+
         encabezado = ft.Container(
             bgcolor=ft.Colors.BLUE_700,
-            padding=ft.padding.symmetric(horizontal=20, vertical=14),
+            padding=ft.Padding(20, 14, 20, 14),
             content=ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
-                    ft.Column(
-                        spacing=2,
-                        controls=[
-                            ft.Text(s.aeropuerto, color=ft.Colors.WHITE, size=13,
-                                    weight=ft.FontWeight.W_500),
-                            ft.Text(s.encuestador, color=ft.Colors.BLUE_100, size=12),
-                        ],
-                    ),
-                    ft.Row(
-                        spacing=8,
-                        controls=[
-                            ft.IconButton(
-                                icon=ft.Icons.DOWNLOAD,
-                                icon_color=ft.Colors.WHITE,
-                                tooltip="Exportar CSV",
-                                on_click=lambda e: accion_exportar(),
-                            ),
-                            ft.IconButton(
-                                icon=ft.Icons.INFO_OUTLINE,
-                                icon_color=ft.Colors.WHITE,
-                                tooltip="Resumen de sesión",
-                                on_click=lambda e: mostrar_resumen(),
-                            ),
-                        ],
-                    ),
+                    ft.Column(spacing=2, controls=[
+                        ft.Text(s.aeropuerto, color=ft.Colors.WHITE,
+                                size=13, weight=ft.FontWeight.W_500),
+                        ft.Text(s.encuestador,
+                                color=ft.Colors.BLUE_100, size=12),
+                    ]),
+                    ft.Row(spacing=4, controls=[
+                        ft.IconButton(icon=ft.Icons.DOWNLOAD,
+                                      icon_color=ft.Colors.WHITE,
+                                      tooltip="Exportar CSV",
+                                      on_click=lambda e: accion_exportar()),
+                        ft.IconButton(icon=ft.Icons.INFO_OUTLINE,
+                                      icon_color=ft.Colors.WHITE,
+                                      tooltip="Resumen",
+                                      on_click=lambda e: mostrar_resumen()),
+                    ]),
                 ],
             ),
         )
 
-        # --- Contenedor de tarjetas ---
-        lista_tarjetas = ft.Column(
-            spacing=12,
-            scroll=ft.ScrollMode.AUTO,
-            expand=True,
-        )
-
-        texto_vacio = ft.Container(
-            expand=True,
-            alignment=ft.alignment.center,
-            content=ft.Column(
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=12,
-                controls=[
-                    ft.Icon(ft.Icons.PERSON_SEARCH, size=64, color=ft.Colors.GREY_400),
-                    ft.Text("Sin pasajeros activos",
-                            size=20, color=ft.Colors.GREY_500,
-                            weight=ft.FontWeight.W_500),
-                    ft.Text("Toca + para agregar una nueva observación",
-                            size=14, color=ft.Colors.GREY_400),
-                ],
-            ),
-        )
-
-        def reconstruir_lista():
-            activos = s.activos()
-            lista_tarjetas.controls.clear()
-            if not activos:
-                lista_tarjetas.controls.append(texto_vacio)
-            else:
-                for p in activos:
-                    lista_tarjetas.controls.append(construir_tarjeta(p, reconstruir_lista))
-            page.update()
-
-        # --- FAB "+" ---
-        fab = ft.FloatingActionButton(
+        # FAB como propiedad de página (evita Stack que puede absorber toques)
+        page.floating_action_button = ft.FloatingActionButton(
             icon=ft.Icons.ADD,
-            text="Nuevo",
             bgcolor=ft.Colors.BLUE_700,
             foreground_color=ft.Colors.WHITE,
+            tooltip="Nueva observación",
             on_click=lambda e: mostrar_dialogo_nuevo(reconstruir_lista),
         )
 
-        page.views.clear()
-        page.views.append(
-            ft.View(
-                route="/principal",
-                bgcolor=ft.Colors.GREY_100,
-                padding=0,
-                floating_action_button=fab,
-                controls=[
-                    ft.Column(
-                        expand=True,
-                        spacing=0,
-                        controls=[
-                            encabezado,
-                            ft.Container(
-                                expand=True,
-                                padding=ft.padding.all(12),
-                                content=lista_tarjetas,
-                            ),
-                        ],
-                    )
-                ],
-            )
+        page.bgcolor = ft.Colors.GREY_100
+        page.controls.clear()
+        page.controls.append(
+            ft.Column(expand=True, spacing=0, controls=[
+                encabezado,
+                ft.Container(
+                    expand=True,
+                    padding=ft.Padding(12, 12, 12, 80),
+                    content=lista_col,
+                ),
+            ])
         )
-        page.go("/principal")
+        page.update()
+
+        # reconstruir_lista_async corre como tarea asyncio independiente,
+        # igual que el timer, para no modificar la UI desde dentro del handler
+        async def reconstruir_lista_async():
+            activos = s.activos()
+            tarjetas_ref.clear()
+            if activos:
+                nuevas = [construir_tarjeta(p, reconstruir_lista)
+                          for p in activos]
+            else:
+                nuevas = [
+                    ft.Container(
+                        expand=True, alignment=ft.Alignment(0, 0),
+                        content=ft.Column(
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=12,
+                            controls=[
+                                ft.Icon(ft.Icons.PERSON_SEARCH, size=64,
+                                        color=ft.Colors.GREY_400),
+                                ft.Text("Sin pasajeros activos", size=20,
+                                        color=ft.Colors.GREY_500,
+                                        weight=ft.FontWeight.W_500),
+                                ft.Text(
+                                    "Toca + para agregar una observación",
+                                    size=14, color=ft.Colors.GREY_400),
+                            ],
+                        ),
+                    )
+                ]
+            lista_col.controls.clear()
+            lista_col.controls.extend(nuevas)
+            page.update()
+
+        def reconstruir_lista():
+            asyncio.create_task(reconstruir_lista_async())
+
         reconstruir_lista()
-        iniciar_timer_live(lista_tarjetas, s, reconstruir_lista)
+        iniciar_timer_live(s)
 
-    # -----------------------------------------------------------------------
-    # TARJETA de pasajero activo
-    # -----------------------------------------------------------------------
+    # ── timer ──────────────────────────────────────────────────────────────
+    def iniciar_timer_live(s: Sesion):
+        my_id = timer_id[0]
 
+        async def _run():
+            while True:
+                await asyncio.sleep(1)
+                if timer_id[0] != my_id:
+                    break
+                for pid, tw in list(tarjetas_ref.items()):
+                    pas = next((p for p in s.pasajeros if p.id == pid), None)
+                    if pas:
+                        tw.value = pas.tiempo_en_etapa_actual()
+                if tarjetas_ref:
+                    page.update()
+
+        asyncio.create_task(_run())
+
+    # ── tarjeta ────────────────────────────────────────────────────────────
     def construir_tarjeta(p: Pasajero, on_change) -> ft.Container:
-        s = sesion[0]
-        color_principal = COLOR_TIPO[p.tipo]
+        s     = sesion[0]
+        color = COLOR_TIPO[p.tipo]
+        label = TIPOS[p.tipo][0]
+        total = len(p.etapas)
+
         etapa = p.etapa_pendiente()
         if etapa is None:
             return ft.Container()
+        _, nombre = etapa
 
-        _clave, texto_etapa = etapa
-        tipo_label = TIPOS[p.tipo][0]
-        total_etapas = len(p.etapas)
+        w_etapa   = ft.Text(nombre, size=17, weight=ft.FontWeight.W_600,
+                            color=ft.Colors.GREY_900)
+        w_btn_txt = ft.Text(f"REGISTRAR: {nombre}", size=15,
+                            weight=ft.FontWeight.BOLD)
+        w_barra   = ft.ProgressBar(value=p.etapa_idx / total,
+                                   bgcolor=ft.Colors.GREY_200, color=color,
+                                   height=6, border_radius=3)
+        w_prog    = ft.Text(p.progreso(), size=12, color=ft.Colors.GREY_500)
+        w_timer   = ft.Text(p.tiempo_en_etapa_actual(), size=22,
+                            weight=ft.FontWeight.BOLD, color=color,
+                            font_family="monospace")
+        tarjetas_ref[p.id] = w_timer
 
-        # Identificador del pasajero
-        titulo = ft.Row(
-            spacing=8,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            controls=[
-                ft.Container(
-                    bgcolor=color_principal,
-                    border_radius=8,
-                    padding=ft.padding.symmetric(horizontal=10, vertical=4),
-                    content=ft.Text(
-                        f"#{p.numero}",
-                        color=ft.Colors.WHITE,
-                        size=16,
-                        weight=ft.FontWeight.BOLD,
-                    ),
-                ),
-                ft.Text(tipo_label, size=15, weight=ft.FontWeight.W_600,
-                        color=color_principal),
-                ft.Text("·", color=ft.Colors.GREY_400),
-                ft.Text(p.linea, size=14, color=ft.Colors.GREY_700),
-                ft.Text(p.vuelo, size=14, color=ft.Colors.GREY_500),
-            ],
-        )
-
-        # Barra de progreso
-        progreso_frac = p.etapa_idx / total_etapas
-        barra_progreso = ft.Column(
-            spacing=4,
-            controls=[
-                ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    controls=[
-                        ft.Text("Progreso", size=12, color=ft.Colors.GREY_500),
-                        ft.Text(p.progreso(), size=12, color=ft.Colors.GREY_500),
-                    ],
-                ),
-                ft.ProgressBar(
-                    value=progreso_frac,
-                    bgcolor=ft.Colors.GREY_200,
-                    color=color_principal,
-                    height=6,
-                    border_radius=3,
-                ),
-            ],
-        )
-
-        # Etapa actual y timer
-        ref_timer = ft.Ref[ft.Text]()
-        bloque_etapa = ft.Container(
-            bgcolor=ft.Colors.GREY_50,
-            border_radius=10,
-            padding=ft.padding.all(14),
-            content=ft.Row(
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                controls=[
-                    ft.Column(
-                        spacing=2,
-                        expand=True,
-                        controls=[
-                            ft.Text("Próximo evento a registrar:",
-                                    size=12, color=ft.Colors.GREY_500),
-                            ft.Text(
-                                texto_etapa,
-                                size=17,
-                                weight=ft.FontWeight.W_600,
-                                color=ft.Colors.GREY_900,
-                            ),
-                        ],
-                    ),
-                    ft.Column(
-                        horizontal_alignment=ft.CrossAxisAlignment.END,
-                        spacing=2,
-                        controls=[
-                            ft.Text("En esta etapa", size=11, color=ft.Colors.GREY_400),
-                            ft.Text(
-                                ref=ref_timer,
-                                value=p.tiempo_en_etapa_actual(),
-                                size=22,
-                                weight=ft.FontWeight.BOLD,
-                                color=color_principal,
-                                font_family="monospace",
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-        )
-
-        # Guardar referencia del timer para actualización en vivo
-        tarjetas_ref[p.id] = ref_timer
-
-        # Botón principal de acción
-        def on_registrar(e, pasajero=p):
-            completado = pasajero.registrar_evento()
+        # handlers ASYNC para correr en el event loop (no en thread pool)
+        # y poder usar asyncio.create_task() dentro de on_change()
+        async def on_registrar(e):
+            completado = p.registrar_evento()
             guardar(s)
             if completado:
-                del tarjetas_ref[pasajero.id]
-                mostrar_dialogo_completar(pasajero, on_change)
+                tarjetas_ref.pop(p.id, None)
+                mostrar_dialogo_completar(p, on_change)
             else:
                 on_change()
 
-        # Botón cancelar
-        def on_cancelar(e, pasajero=p):
-            def confirmar_cancelar(e2):
-                pasajero.cancelar()
+        async def on_cancelar(e):
+            async def confirmar(e2):
+                p.cancelar()
                 guardar(s)
-                if pasajero.id in tarjetas_ref:
-                    del tarjetas_ref[pasajero.id]
-                page.dialog.open = False
+                tarjetas_ref.pop(p.id, None)
+                cerrar_dialogo()
                 on_change()
-                page.update()
 
-            page.dialog = ft.AlertDialog(
+            abrir_dialogo(ft.AlertDialog(
                 modal=True,
                 title=ft.Text("¿Cancelar observación?"),
-                content=ft.Text(f"Se perderán los datos del pasajero #{pasajero.numero}."),
+                content=ft.Text(
+                    f"Se perderán los datos del pasajero #{p.numero}."),
                 actions=[
-                    ft.TextButton("Cancelar", on_click=lambda e: cerrar_dialogo()),
+                    ft.TextButton("Volver",
+                                  on_click=lambda e: cerrar_dialogo()),
                     ft.TextButton("Sí, descartar",
-                                  style=ft.ButtonStyle(color=ft.Colors.RED_700),
-                                  on_click=confirmar_cancelar),
+                                  style=ft.ButtonStyle(
+                                      color=ft.Colors.RED_700),
+                                  on_click=confirmar),
                 ],
-            )
-            page.dialog.open = True
-            page.update()
+            ))
 
-        tarjeta = ft.Container(
-            bgcolor=ft.Colors.WHITE,
-            border_radius=16,
-            padding=ft.padding.all(16),
+        return ft.Container(
+            bgcolor=ft.Colors.WHITE, border_radius=16,
+            padding=ft.Padding(16, 16, 16, 16),
             shadow=ft.BoxShadow(
                 blur_radius=8,
                 color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
-                offset=ft.Offset(0, 2),
-            ),
-            border=ft.border.all(1, ft.Colors.GREY_200),
-            content=ft.Column(
-                spacing=14,
-                controls=[
-                    titulo,
-                    barra_progreso,
-                    bloque_etapa,
-                    # Botón principal (grande, toda la anchura)
-                    ft.ElevatedButton(
-                        content=ft.Row(
-                            alignment=ft.MainAxisAlignment.CENTER,
-                            spacing=8,
-                            controls=[
-                                ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=20),
-                                ft.Text(
-                                    f"REGISTRAR: {texto_etapa}",
-                                    size=15,
-                                    weight=ft.FontWeight.BOLD,
-                                ),
-                            ],
-                        ),
-                        style=ft.ButtonStyle(
-                            shape=ft.RoundedRectangleBorder(radius=10),
-                            padding=ft.padding.symmetric(vertical=16),
-                        ),
-                        bgcolor=color_principal,
+                offset=ft.Offset(0, 2)),
+            border=_borde(1, ft.Colors.GREY_200),
+            content=ft.Column(spacing=14, controls=[
+                ft.Row(spacing=8,
+                       vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                       controls=[
+                           ft.Container(
+                               bgcolor=color, border_radius=8,
+                               padding=ft.Padding(10, 4, 10, 4),
+                               content=ft.Text(f"#{p.numero}",
+                                               color=ft.Colors.WHITE,
+                                               size=16,
+                                               weight=ft.FontWeight.BOLD)),
+                           ft.Text(label, size=15,
+                                   weight=ft.FontWeight.W_600, color=color),
+                           ft.Text("·", color=ft.Colors.GREY_400),
+                           ft.Text(p.linea, size=14, color=ft.Colors.GREY_700),
+                           ft.Text(p.vuelo,  size=14, color=ft.Colors.GREY_500),
+                       ]),
+                ft.Column(spacing=4, controls=[
+                    ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                           controls=[ft.Text("Progreso", size=12,
+                                             color=ft.Colors.GREY_500),
+                                     w_prog]),
+                    w_barra,
+                ]),
+                ft.Container(
+                    bgcolor=ft.Colors.GREY_50, border_radius=10,
+                    padding=ft.Padding(14, 14, 14, 14),
+                    content=ft.Row(
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Column(spacing=2, expand=True, controls=[
+                                ft.Text("Próximo evento:",
+                                        size=12, color=ft.Colors.GREY_500),
+                                w_etapa,
+                            ]),
+                            ft.Column(
+                                horizontal_alignment=ft.CrossAxisAlignment.END,
+                                spacing=2,
+                                controls=[
+                                    ft.Text("En esta etapa", size=11,
+                                            color=ft.Colors.GREY_400),
+                                    w_timer,
+                                ]),
+                        ])),
+                ft.FilledButton(
+                    content=ft.Row(
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        spacing=8,
+                        controls=[
+                            ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=20),
+                            w_btn_txt,
+                        ]),
+                    style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=10),
+                        padding=ft.Padding(0, 16, 0, 16),
+                        bgcolor=color,
                         color=ft.Colors.WHITE,
-                        on_click=on_registrar,
-                        expand=True,
                     ),
-                    # Botón cancelar (pequeño, discreto)
-                    ft.TextButton(
-                        "Descartar observación",
-                        icon=ft.Icons.DELETE_OUTLINE,
-                        style=ft.ButtonStyle(color=ft.Colors.RED_400),
-                        on_click=on_cancelar,
-                    ),
-                ],
-            ),
-        )
-        return tarjeta
-
-    # -----------------------------------------------------------------------
-    # DIÁLOGO: Nuevo pasajero
-    # -----------------------------------------------------------------------
-
-    def mostrar_dialogo_nuevo(on_change):
-        tipo_sel: list[str] = ["counter"]
-
-        dd_linea = ft.Dropdown(
-            label="Línea aérea",
-            options=[ft.dropdown.Option(l) for l in LINEAS_AEREAS],
-            border_radius=10,
-            value=LINEAS_AEREAS[0],
-        )
-        campo_vuelo = ft.TextField(
-            label="N° de vuelo (opcional)",
-            hint_text="Ej: LA-450",
-            border_radius=10,
-        )
-
-        def chip_tipo(tipo_key, label, icono):
-            sel = tipo_sel[0] == tipo_key
-
-            def on_select(e, tk=tipo_key):
-                tipo_sel[0] = tk
-                # Reconstruir chips
-                actualizar_chips()
-
-            return ft.Container(
-                on_click=on_select,
-                bgcolor=COLOR_TIPO[tipo_key] if tipo_sel[0] == tipo_key else ft.Colors.GREY_100,
-                border_radius=10,
-                padding=ft.padding.symmetric(horizontal=14, vertical=10),
-                border=ft.border.all(2, COLOR_TIPO[tipo_key] if tipo_sel[0] == tipo_key else ft.Colors.GREY_300),
-                content=ft.Row(
-                    spacing=6,
-                    controls=[
-                        ft.Icon(icono, size=18,
-                                color=ft.Colors.WHITE if tipo_sel[0] == tipo_key else ft.Colors.GREY_600),
-                        ft.Text(label, size=13, weight=ft.FontWeight.W_500,
-                                color=ft.Colors.WHITE if tipo_sel[0] == tipo_key else ft.Colors.GREY_700),
-                    ],
+                    on_click=on_registrar, expand=True,
                 ),
+                ft.TextButton(
+                    "Descartar observación",
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    style=ft.ButtonStyle(color=ft.Colors.RED_400),
+                    on_click=on_cancelar),
+            ]),
+        )
+
+    # ── diálogos ──────────────────────────────────────────────────────────
+    def mostrar_dialogo_nuevo(on_change):
+        tipo_sel = ["counter"]
+        chips_data = [
+            ("counter",       "Counter",       ft.Icons.AIRLINE_SEAT_RECLINE_NORMAL),
+            ("autochequeo",   "Autochequeo",   ft.Icons.COMPUTER),
+            ("equipaje",      "Equipaje",      ft.Icons.LUGGAGE),
+            ("internacional", "Internacional", ft.Icons.PUBLIC),
+        ]
+
+        def hacer_chip(key, lbl, icon):
+            sel = tipo_sel[0] == key
+            def click(e, k=key):
+                tipo_sel[0] = k
+                chips_row.controls = [hacer_chip(*d) for d in chips_data]
+                page.update()
+            return ft.Container(
+                on_click=click,
+                bgcolor=COLOR_TIPO[key] if sel else ft.Colors.GREY_100,
+                border_radius=10,
+                padding=ft.Padding(14, 10, 14, 10),
+                border=_borde(2, COLOR_TIPO[key] if sel else ft.Colors.GREY_300),
+                content=ft.Row(spacing=6, controls=[
+                    ft.Icon(icon, size=18,
+                            color=ft.Colors.WHITE if sel else ft.Colors.GREY_600),
+                    ft.Text(lbl, size=13, weight=ft.FontWeight.W_500,
+                            color=ft.Colors.WHITE if sel else ft.Colors.GREY_700),
+                ]),
             )
 
-        chips_row = ft.Ref[ft.Row]()
+        chips_row   = ft.Row(wrap=True, spacing=8, run_spacing=8,
+                             controls=[hacer_chip(*d) for d in chips_data])
+        dd_linea    = ft.Dropdown(
+            label="Línea aérea",
+            options=[ft.dropdown.Option(l) for l in LINEAS_AEREAS],
+            border_radius=10, value=LINEAS_AEREAS[0])
+        campo_vuelo = ft.TextField(
+            label="N° de vuelo (opcional)", hint_text="Ej: LA-450",
+            border_radius=10)
 
-        def construir_chips():
-            return [
-                chip_tipo("counter", "Counter", ft.Icons.AIRLINE_SEAT_RECLINE_NORMAL),
-                chip_tipo("autochequeo", "Autochequeo", ft.Icons.COMPUTER),
-                chip_tipo("equipaje", "Equipaje", ft.Icons.LUGGAGE),
-                chip_tipo("internacional", "Internacional", ft.Icons.PUBLIC),
-            ]
-
-        chips_container = ft.Row(wrap=True, spacing=8, run_spacing=8, controls=construir_chips())
-
-        def actualizar_chips():
-            chips_container.controls = construir_chips()
-            page.update()
-
-        def confirmar(e):
+        async def confirmar(e):
             if not dd_linea.value:
                 return
             sesion[0].agregar_pasajero(
-                tipo=tipo_sel[0],
-                linea=dd_linea.value,
-                vuelo=campo_vuelo.value.strip() or "-",
-            )
+                tipo_sel[0], dd_linea.value,
+                campo_vuelo.value.strip() or "-")
             guardar(sesion[0])
-            page.dialog.open = False
+            cerrar_dialogo()
             on_change()
-            page.update()
 
-        page.dialog = ft.AlertDialog(
+        abrir_dialogo(ft.AlertDialog(
             modal=True,
             title=ft.Text("Nueva Observación", weight=ft.FontWeight.BOLD),
-            content=ft.Container(
-                width=420,
-                content=ft.Column(
-                    tight=True,
-                    spacing=16,
-                    controls=[
-                        ft.Text("Tipo de proceso:", size=13, weight=ft.FontWeight.W_500,
-                                color=ft.Colors.GREY_700),
-                        chips_container,
-                        ft.Divider(),
-                        dd_linea,
-                        campo_vuelo,
-                    ],
-                ),
-            ),
+            content=ft.Container(width=420, content=ft.Column(
+                tight=True, spacing=16,
+                controls=[
+                    ft.Text("Tipo de proceso:", size=13,
+                            weight=ft.FontWeight.W_500,
+                            color=ft.Colors.GREY_700),
+                    chips_row, ft.Divider(), dd_linea, campo_vuelo,
+                ],
+            )),
             actions=[
                 ft.TextButton("Cancelar", on_click=lambda e: cerrar_dialogo()),
-                ft.ElevatedButton(
-                    "Iniciar",
-                    icon=ft.Icons.PLAY_ARROW,
-                    bgcolor=ft.Colors.BLUE_700,
-                    color=ft.Colors.WHITE,
-                    on_click=confirmar,
-                ),
+                ft.FilledButton(
+                    "Iniciar", icon=ft.Icons.PLAY_ARROW,
+                    style=ft.ButtonStyle(
+                        bgcolor=ft.Colors.BLUE_700, color=ft.Colors.WHITE),
+                    on_click=confirmar),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
-        )
-        page.dialog.open = True
-        page.update()
-
-    # -----------------------------------------------------------------------
-    # DIÁLOGO: Datos al completar una observación
-    # -----------------------------------------------------------------------
+        ))
 
     def mostrar_dialogo_completar(p: Pasajero, on_change):
-        """Captura datos extra después de completar todas las etapas."""
-
-        controles_extra = []
+        c_mod = c_per = c_eq = c_ori = c_cin = c_car = None
+        extras = []
 
         if p.tipo in ("counter", "autochequeo"):
-            campo_modulos = ft.TextField(
-                label="Módulos en servicio",
-                hint_text="Ej: 4",
-                keyboard_type=ft.KeyboardType.NUMBER,
-                border_radius=10,
-            )
-            campo_personas = ft.TextField(
-                label="Personas en el grupo",
-                hint_text="Ej: 2",
-                keyboard_type=ft.KeyboardType.NUMBER,
-                border_radius=10,
-                value="1",
-            )
-            dd_equip = ft.Dropdown(
-                label="Equipaje en bodega",
-                options=[ft.dropdown.Option("Sí"), ft.dropdown.Option("No")],
-                border_radius=10,
-                value="Sí",
-            )
-            controles_extra = [campo_modulos, campo_personas, dd_equip]
-
+            c_mod = ft.TextField(label="Módulos en servicio", hint_text="Ej: 4",
+                                 keyboard_type=ft.KeyboardType.NUMBER,
+                                 border_radius=10)
+            c_per = ft.TextField(label="Personas en el grupo", hint_text="Ej: 2",
+                                 keyboard_type=ft.KeyboardType.NUMBER,
+                                 border_radius=10, value="1")
+            c_eq  = ft.Dropdown(label="Equipaje en bodega",
+                                options=[ft.dropdown.Option("Sí"),
+                                         ft.dropdown.Option("No")],
+                                border_radius=10, value="Sí")
+            extras = [c_mod, c_per, c_eq]
         elif p.tipo == "equipaje":
-            campo_origen = ft.TextField(
-                label="Origen del vuelo",
-                hint_text="Ej: Santiago",
-                border_radius=10,
-            )
-            campo_cinta = ft.TextField(
-                label="N° de cinta",
-                hint_text="Ej: 1",
-                keyboard_type=ft.KeyboardType.NUMBER,
-                border_radius=10,
-            )
-            campo_carros = ft.TextField(
-                label="Carros disponibles",
-                hint_text="Ej: 30",
-                keyboard_type=ft.KeyboardType.NUMBER,
-                border_radius=10,
-            )
-            controles_extra = [campo_origen, campo_cinta, campo_carros]
+            c_ori = ft.TextField(label="Origen del vuelo",
+                                 hint_text="Ej: Santiago", border_radius=10)
+            c_cin = ft.TextField(label="N° de cinta", hint_text="Ej: 1",
+                                 keyboard_type=ft.KeyboardType.NUMBER,
+                                 border_radius=10)
+            c_car = ft.TextField(label="Carros disponibles",
+                                 hint_text="Ej: 30",
+                                 keyboard_type=ft.KeyboardType.NUMBER,
+                                 border_radius=10)
+            extras = [c_ori, c_cin, c_car]
 
-        def guardar_y_cerrar(e):
+        async def guardar_y_cerrar(e):
             if p.tipo in ("counter", "autochequeo"):
-                p.extra["modulos"]          = campo_modulos.value
-                p.extra["personas"]         = campo_personas.value
-                p.extra["equipaje_bodega"]  = dd_equip.value
+                p.extra.update({"modulos": c_mod.value,
+                                "personas": c_per.value,
+                                "equipaje_bodega": c_eq.value})
             elif p.tipo == "equipaje":
-                p.extra["origen"] = campo_origen.value
-                p.extra["cinta"]  = campo_cinta.value
-                p.extra["carros"] = campo_carros.value
+                p.extra.update({"origen": c_ori.value,
+                                "cinta": c_cin.value,
+                                "carros": c_car.value})
             guardar(sesion[0])
-            page.dialog.open = False
+            cerrar_dialogo()
             on_change()
-            page.update()
 
-        tipo_label = TIPOS[p.tipo][0]
-        page.dialog = ft.AlertDialog(
+        abrir_dialogo(ft.AlertDialog(
             modal=True,
-            title=ft.Row(
-                spacing=8,
+            title=ft.Row(spacing=8, controls=[
+                ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN_600, size=24),
+                ft.Text(f"#{p.numero} Completado", weight=ft.FontWeight.BOLD),
+            ]),
+            content=ft.Container(width=420, content=ft.Column(
+                tight=True, spacing=14,
                 controls=[
-                    ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN_600, size=24),
-                    ft.Text(f"#{p.numero} Completado", weight=ft.FontWeight.BOLD),
+                    ft.Text(f"{TIPOS[p.tipo][0]}  ·  {p.linea}  {p.vuelo}",
+                            size=13, color=ft.Colors.GREY_600),
+                    ft.Divider(), *extras,
                 ],
-            ),
-            content=ft.Container(
-                width=420,
-                content=ft.Column(
-                    tight=True,
-                    spacing=14,
-                    controls=[
-                        ft.Text(
-                            f"Proceso: {tipo_label}  ·  {p.linea}  {p.vuelo}",
-                            size=13,
-                            color=ft.Colors.GREY_600,
-                        ),
-                        ft.Divider(),
-                        *controles_extra,
-                    ],
-                ),
-            ),
+            )),
             actions=[
-                ft.ElevatedButton(
-                    "Guardar y cerrar",
-                    icon=ft.Icons.SAVE,
-                    bgcolor=ft.Colors.GREEN_700,
-                    color=ft.Colors.WHITE,
-                    on_click=guardar_y_cerrar,
-                ),
+                ft.FilledButton("Guardar y cerrar", icon=ft.Icons.SAVE,
+                               style=ft.ButtonStyle(
+                                   bgcolor=ft.Colors.GREEN_700,
+                                   color=ft.Colors.WHITE),
+                               on_click=guardar_y_cerrar),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
-        )
-        page.dialog.open = True
-        page.update()
-
-    # -----------------------------------------------------------------------
-    # DIÁLOGO: Resumen de sesión
-    # -----------------------------------------------------------------------
+        ))
 
     def mostrar_resumen():
         s = sesion[0]
-        activos    = len(s.activos())
-        completados = len(s.completados())
-        total      = len(s.pasajeros)
-
-        page.dialog = ft.AlertDialog(
-            modal=False,
-            title=ft.Text("Resumen de sesión"),
-            content=ft.Column(
-                tight=True,
-                spacing=10,
-                controls=[
-                    ft.Text(f"Aeropuerto:  {s.aeropuerto}", size=14),
-                    ft.Text(f"Encuestador: {s.encuestador}", size=14),
-                    ft.Text(f"Fecha:       {s.fecha}", size=14),
-                    ft.Divider(),
-                    ft.Text(f"Observaciones totales:     {total}", size=14),
-                    ft.Text(f"En curso:                  {activos}", size=14, color=ft.Colors.ORANGE_700),
-                    ft.Text(f"Completadas:               {completados}", size=14, color=ft.Colors.GREEN_700),
-                ],
-            ),
-            actions=[
-                ft.TextButton("Cerrar", on_click=lambda e: cerrar_dialogo()),
-            ],
-        )
-        page.dialog.open = True
-        page.update()
-
-    # -----------------------------------------------------------------------
-    # ACCIÓN: Exportar CSV
-    # -----------------------------------------------------------------------
+        abrir_dialogo(ft.AlertDialog(
+            modal=False, title=ft.Text("Resumen de sesión"),
+            content=ft.Column(tight=True, spacing=10, controls=[
+                ft.Text(f"Aeropuerto:  {s.aeropuerto}", size=14),
+                ft.Text(f"Encuestador: {s.encuestador}", size=14),
+                ft.Text(f"Fecha:       {s.fecha}", size=14),
+                ft.Divider(),
+                ft.Text(f"Total:       {len(s.pasajeros)}", size=14),
+                ft.Text(f"En curso:    {len(s.activos())}", size=14,
+                        color=ft.Colors.ORANGE_700),
+                ft.Text(f"Completadas: {len(s.completados())}", size=14,
+                        color=ft.Colors.GREEN_700),
+            ]),
+            actions=[ft.TextButton("Cerrar",
+                                   on_click=lambda e: cerrar_dialogo())],
+        ))
 
     def accion_exportar():
         s = sesion[0]
-        completados = len(s.completados())
-        if completados == 0:
+        if not s.completados():
             page.snack_bar = ft.SnackBar(
-                ft.Text("No hay observaciones completadas para exportar."),
-                bgcolor=ft.Colors.ORANGE_700,
-            )
+                ft.Text("No hay observaciones completadas."),
+                bgcolor=ft.Colors.ORANGE_700)
             page.snack_bar.open = True
             page.update()
             return
-
         ruta = exportar_csv(s)
         page.snack_bar = ft.SnackBar(
-            ft.Row(
-                spacing=8,
-                controls=[
-                    ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.WHITE),
-                    ft.Text(f"CSV exportado: {ruta.name}", color=ft.Colors.WHITE),
-                ],
-            ),
-            bgcolor=ft.Colors.GREEN_700,
-            duration=5000,
-        )
+            ft.Text(f"CSV exportado: {ruta.name}", color=ft.Colors.WHITE),
+            bgcolor=ft.Colors.GREEN_700, duration=5000)
         page.snack_bar.open = True
         page.update()
-
-    # -----------------------------------------------------------------------
-    # TIMER EN VIVO: actualiza los cronómetros cada segundo
-    # -----------------------------------------------------------------------
-
-    timer_activo = [True]
-
-    def iniciar_timer_live(lista, s, on_change):
-        def loop():
-            while timer_activo[0]:
-                time_module.sleep(1)
-                # Actualizar solo los textos de timer (sin reconstruir tarjetas)
-                for pid, ref in list(tarjetas_ref.items()):
-                    pasajero = next((p for p in s.pasajeros if p.id == pid), None)
-                    if pasajero and ref.current:
-                        ref.current.value = pasajero.tiempo_en_etapa_actual()
-                try:
-                    page.update()
-                except Exception:
-                    break
-
-        t = threading.Thread(target=loop, daemon=True)
-        t.start()
-
-    # -----------------------------------------------------------------------
-    # Utilidad: cerrar diálogo
-    # -----------------------------------------------------------------------
-
-    def cerrar_dialogo():
-        if page.dialog:
-            page.dialog.open = False
-        page.update()
-
-    # -----------------------------------------------------------------------
-    # Inicio de la app
-    # -----------------------------------------------------------------------
 
     mostrar_setup()
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.run(main)

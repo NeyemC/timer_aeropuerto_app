@@ -103,7 +103,8 @@ class Pasajero:
         return f"{self.etapa_idx} / {len(self.etapas)}"
 
     def tiempo_en_etapa_actual(self) -> str:
-        """Tiempo transcurrido desde el último evento registrado (MM:SS)."""
+        """Tiempo transcurrido desde el último evento registrado (MM:SS).
+        Devuelve '--:--' antes del primer evento."""
         if self.etapa_idx == 0:
             return "--:--"
         ultima_clave = self.etapas[self.etapa_idx - 1][0]
