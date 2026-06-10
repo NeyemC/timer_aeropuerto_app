@@ -137,12 +137,12 @@ def exportar_csv(sesion: Sesion) -> Path:
             if p.tipo == "counter":
                 fila["counter_fila"]    = _hms(_segundos(ts.get("inicio_fila_counter",""), ts.get("inicio_atencion_counter","")))
                 fila["counter_proceso"] = _hms(_segundos(ts.get("inicio_atencion_counter",""), ts.get("fin_counter","")))
-                fila["avsec_fila"]      = _hms(_segundos(ts.get("inicio_fila_avsec",""), ts.get("inicio_atencion_avsec","")))
-                fila["avsec_proceso"]   = _hms(_segundos(ts.get("inicio_atencion_avsec",""), ts.get("fin_avsec","")))
 
             elif p.tipo == "autochequeo":
                 fila["auto_fila"]       = _hms(_segundos(ts.get("inicio_fila_auto",""), ts.get("inicio_uso_auto","")))
                 fila["auto_proceso"]    = _hms(_segundos(ts.get("inicio_uso_auto",""), ts.get("fin_auto","")))
+
+            elif p.tipo == "avsec":
                 fila["avsec_fila"]      = _hms(_segundos(ts.get("inicio_fila_avsec",""), ts.get("inicio_atencion_avsec","")))
                 fila["avsec_proceso"]   = _hms(_segundos(ts.get("inicio_atencion_avsec",""), ts.get("fin_avsec","")))
 

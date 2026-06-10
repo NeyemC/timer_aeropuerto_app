@@ -17,15 +17,15 @@ ETAPAS_COUNTER = [
     ("inicio_fila_counter",      "Inicio Fila Counter"),
     ("inicio_atencion_counter",  "Inicio Atención Counter"),
     ("fin_counter",              "Fin Counter"),
-    ("inicio_fila_avsec",        "Inicio Fila AVSEC"),
-    ("inicio_atencion_avsec",    "Inicio Atención AVSEC"),
-    ("fin_avsec",                "Fin AVSEC"),
 ]
 
 ETAPAS_AUTOCHEQUEO = [
     ("inicio_fila_auto",         "Inicio Fila Autochequeo"),
     ("inicio_uso_auto",          "Inicio Uso Kiosko"),
     ("fin_auto",                 "Fin Autochequeo"),
+]
+
+ETAPAS_AVSEC = [
     ("inicio_fila_avsec",        "Inicio Fila AVSEC"),
     ("inicio_atencion_avsec",    "Inicio Atención AVSEC"),
     ("fin_avsec",                "Fin AVSEC"),
@@ -50,10 +50,11 @@ ETAPAS_INTERNACIONAL = [
 ]
 
 TIPOS = {
-    "counter":       ("Counter",              ETAPAS_COUNTER),
-    "autochequeo":   ("Autochequeo",          ETAPAS_AUTOCHEQUEO),
-    "equipaje":      ("Equipaje Llegada",     ETAPAS_EQUIPAJE),
-    "internacional": ("Llegada Internacional",ETAPAS_INTERNACIONAL),
+    "counter":       ("Counter",               ETAPAS_COUNTER),
+    "autochequeo":   ("Autochequeo",           ETAPAS_AUTOCHEQUEO),
+    "avsec":         ("AVSEC",                 ETAPAS_AVSEC),
+    "equipaje":      ("Equipaje Llegada",      ETAPAS_EQUIPAJE),
+    "internacional": ("Llegada Internacional", ETAPAS_INTERNACIONAL),
 }
 
 LINEAS_AEREAS = ["LATAM", "Sky Airline", "JetSmart", "DAP"]

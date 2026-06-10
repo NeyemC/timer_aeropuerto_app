@@ -11,6 +11,7 @@ from almacenamiento import guardar, exportar_csv
 COLOR_TIPO = {
     "counter":       ft.Colors.BLUE_700,
     "autochequeo":   ft.Colors.GREEN_700,
+    "avsec":         ft.Colors.TEAL_700,
     "equipaje":      ft.Colors.ORANGE_700,
     "internacional": ft.Colors.PURPLE_700,
 }
@@ -120,11 +121,11 @@ async def main(page: ft.Page):
                         ft.IconButton(icon=ft.Icons.DOWNLOAD,
                                       icon_color=ft.Colors.WHITE,
                                       tooltip="Exportar CSV",
-                                      on_click=lambda e: accion_exportar()),
+                                      on_click=accion_exportar),
                         ft.IconButton(icon=ft.Icons.INFO_OUTLINE,
                                       icon_color=ft.Colors.WHITE,
                                       tooltip="Resumen",
-                                      on_click=lambda e: mostrar_resumen()),
+                                      on_click=mostrar_resumen),
                     ]),
                 ],
             ),
@@ -351,6 +352,7 @@ async def main(page: ft.Page):
         chips_data = [
             ("counter",       "Counter",       ft.Icons.AIRLINE_SEAT_RECLINE_NORMAL),
             ("autochequeo",   "Autochequeo",   ft.Icons.COMPUTER),
+            ("avsec",         "AVSEC",         ft.Icons.SECURITY),
             ("equipaje",      "Equipaje",      ft.Icons.LUGGAGE),
             ("internacional", "Internacional", ft.Icons.PUBLIC),
         ]
@@ -483,7 +485,7 @@ async def main(page: ft.Page):
             actions_alignment=ft.MainAxisAlignment.END,
         ))
 
-    def mostrar_resumen():
+    async def mostrar_resumen(_e):
         s = sesion[0]
         abrir_dialogo(ft.AlertDialog(
             modal=False, title=ft.Text("Resumen de sesión"),
@@ -502,21 +504,31 @@ async def main(page: ft.Page):
                                    on_click=lambda e: cerrar_dialogo())],
         ))
 
-    def accion_exportar():
+    async def accion_exportar(_e):
         s = sesion[0]
         if not s.completados():
-            page.snack_bar = ft.SnackBar(
-                ft.Text("No hay observaciones completadas."),
-                bgcolor=ft.Colors.ORANGE_700)
-            page.snack_bar.open = True
-            page.update()
+            abrir_dialogo(ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Sin datos para exportar"),
+                content=ft.Text("Aún no hay observaciones completadas."),
+                actions=[ft.TextButton("OK", on_click=lambda e: cerrar_dialogo())],
+            ))
             return
-        ruta = exportar_csv(s)
-        page.snack_bar = ft.SnackBar(
-            ft.Text(f"CSV exportado: {ruta.name}", color=ft.Colors.WHITE),
-            bgcolor=ft.Colors.GREEN_700, duration=5000)
-        page.snack_bar.open = True
-        page.update()
+        try:
+            ruta = exportar_csv(s)
+            abrir_dialogo(ft.AlertDialog(
+                modal=False,
+                title=ft.Text("CSV exportado"),
+                content=ft.Text(str(ruta)),
+                actions=[ft.TextButton("OK", on_click=lambda e: cerrar_dialogo())],
+            ))
+        except Exception as ex:
+            abrir_dialogo(ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Error al exportar"),
+                content=ft.Text(str(ex)),
+                actions=[ft.TextButton("OK", on_click=lambda e: cerrar_dialogo())],
+            ))
 
     mostrar_setup()
 
