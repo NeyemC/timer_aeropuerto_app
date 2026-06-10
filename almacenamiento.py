@@ -11,11 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from modelos import Sesion, Pasajero, TIPOS
 
-# Detectar Android por la existencia de /sdcard
-if Path("/sdcard/Android").exists():
-    CARPETA_DATOS = Path("/sdcard/tiempos_aeropuerto")
-else:
-    CARPETA_DATOS = Path.home() / "tiempos_aeropuerto"
+# En Android /sdcard y /storage/emulated/0 son el almacenamiento
+# interno del usuario (visible en el explorador), no requieren SD física.
+_android_roots = [Path("/storage/emulated/0"), Path("/sdcard")]
+_android_root = next((p for p in _android_roots if p.exists()), None)
+CARPETA_DATOS = (_android_root / "tiempos_aeropuerto") if _android_root \
+    else (Path.home() / "tiempos_aeropuerto")
 CARPETA_DATOS.mkdir(exist_ok=True)
 
 
