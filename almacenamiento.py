@@ -151,38 +151,30 @@ def exportar_csv(sesion: Sesion) -> Path:
     return ruta
 
 
+_GAS_URL = "https://script.google.com/macros/s/AKfycby0J5Fe9HLlDfjjKhiKqcTgmDeRvUZ2dJLIhNCwljoIdrLYtQCza3SYF8JweYbN9l8c/exec"
+
+
 def sincronizar_sheets(sesion: Sesion) -> int:
     """
-    Añade las observaciones completadas de la sesión a Google Sheets.
-    Evita duplicados comparando obs_id con filas ya existentes.
-    Retorna el número de filas nuevas añadidas.
+    Envía las observaciones completadas al Google Apps Script que las escribe en Sheets.
+    Usa urllib (stdlib) para evitar dependencias nativas en Android.
+    Retorna el número de filas nuevas añadidas según responde el script.
     """
-    import gspread
+    import urllib.request
 
-    creds_path = Path(__file__).parent / "credenciales_google.json"
-    gc = gspread.service_account(filename=str(creds_path))
-    sh = gc.open("Tiempos Aeropuerto")
-
-    try:
-        ws = sh.worksheet("Observaciones")
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet("Observaciones", rows=1000, cols=len(COLUMNAS))
-        ws.append_row(COLUMNAS)
-
-    # Obtener obs_ids ya registrados para evitar duplicados
-    datos = ws.get_all_values()
-    if not datos:
-        ws.append_row(COLUMNAS)
-        ids_existentes: set = set()
-    else:
-        obs_col = COLUMNAS.index("obs_id")
-        ids_existentes = {fila[obs_col] for fila in datos[1:] if len(fila) > obs_col}
-
-    nuevas = [
-        [_construir_fila(sesion, p).get(col, "") for col in COLUMNAS]
+    filas = [
+        [str(_construir_fila(sesion, p).get(col, "")) for col in COLUMNAS]
         for p in sesion.completados()
-        if p.id not in ids_existentes
     ]
-    if nuevas:
-        ws.append_rows(nuevas, value_input_option="USER_ENTERED")
-    return len(nuevas)
+    if not filas:
+        return 0
+
+    payload = json.dumps({"columnas": COLUMNAS, "filas": filas}).encode("utf-8")
+    req = urllib.request.Request(
+        _GAS_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        n = int(resp.read().decode("utf-8").strip())
+    return n
