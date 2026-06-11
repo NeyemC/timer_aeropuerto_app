@@ -63,11 +63,25 @@ def listar_sesiones() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Exportación a CSV
+# Exportación a CSV y Google Sheets
 # ---------------------------------------------------------------------------
 
+COLUMNAS = [
+    "sesion_id", "fecha", "aeropuerto", "encuestador",
+    "obs_id", "numero", "tipo", "linea_aerea", "vuelo",
+    "counter_fila", "counter_proceso",
+    "auto_fila", "auto_proceso",
+    "avsec_fila", "avsec_proceso",
+    "equipaje_primera_maleta", "equipaje_ultima_maleta",
+    "equipaje_origen", "equipaje_cinta", "equipaje_carros",
+    "intl_poli_llegada_fila", "intl_poli_llegada_proceso",
+    "intl_sag_fila", "intl_sag_proceso",
+    "intl_poli_salida_fila", "intl_poli_salida_proceso",
+    "modulos_servicio", "equipaje_bodega", "personas",
+]
+
+
 def _segundos(t1_iso: str, t2_iso: str) -> float | None:
-    """Diferencia en segundos entre dos timestamps ISO."""
     try:
         t1 = datetime.fromisoformat(t1_iso)
         t2 = datetime.fromisoformat(t2_iso)
@@ -77,7 +91,6 @@ def _segundos(t1_iso: str, t2_iso: str) -> float | None:
 
 
 def _hms(segundos: float | None) -> str:
-    """Formatea segundos como HH:MM:SS para compatibilidad con Excel."""
     if segundos is None:
         return ""
     h, rem = divmod(int(segundos), 3600)
@@ -85,87 +98,91 @@ def _hms(segundos: float | None) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 
+def _construir_fila(sesion: Sesion, p: Pasajero) -> dict:
+    ts = p.timestamps
+    fila: dict = {
+        "sesion_id":        sesion.id,
+        "fecha":            sesion.fecha,
+        "aeropuerto":       sesion.aeropuerto,
+        "encuestador":      sesion.encuestador,
+        "obs_id":           p.id,
+        "numero":           p.numero,
+        "tipo":             TIPOS[p.tipo][0],
+        "linea_aerea":      p.linea,
+        "vuelo":            p.vuelo,
+        "modulos_servicio": p.extra.get("modulos", ""),
+        "equipaje_bodega":  p.extra.get("equipaje_bodega", ""),
+        "personas":         p.extra.get("personas", ""),
+        "equipaje_origen":  p.extra.get("origen", ""),
+        "equipaje_cinta":   p.extra.get("cinta", ""),
+        "equipaje_carros":  p.extra.get("carros", ""),
+    }
+    if p.tipo == "counter":
+        fila["counter_fila"]    = _hms(_segundos(ts.get("inicio_fila_counter",""), ts.get("inicio_atencion_counter","")))
+        fila["counter_proceso"] = _hms(_segundos(ts.get("inicio_atencion_counter",""), ts.get("fin_counter","")))
+    elif p.tipo == "autochequeo":
+        fila["auto_fila"]    = _hms(_segundos(ts.get("inicio_fila_auto",""), ts.get("inicio_uso_auto","")))
+        fila["auto_proceso"] = _hms(_segundos(ts.get("inicio_uso_auto",""), ts.get("fin_auto","")))
+    elif p.tipo == "avsec":
+        fila["avsec_fila"]    = _hms(_segundos(ts.get("inicio_fila_avsec",""), ts.get("inicio_atencion_avsec","")))
+        fila["avsec_proceso"] = _hms(_segundos(ts.get("inicio_atencion_avsec",""), ts.get("fin_avsec","")))
+    elif p.tipo == "equipaje":
+        fila["equipaje_primera_maleta"] = _hms(_segundos(ts.get("aterrizaje",""), ts.get("primera_maleta","")))
+        fila["equipaje_ultima_maleta"]  = _hms(_segundos(ts.get("aterrizaje",""), ts.get("ultima_maleta","")))
+    elif p.tipo == "internacional":
+        fila["intl_poli_llegada_fila"]    = _hms(_segundos(ts.get("inicio_fila_poli_llegada",""), ts.get("inicio_atencion_poli_llegada","")))
+        fila["intl_poli_llegada_proceso"] = _hms(_segundos(ts.get("inicio_atencion_poli_llegada",""), ts.get("fin_poli_llegada","")))
+        fila["intl_sag_fila"]             = _hms(_segundos(ts.get("inicio_fila_sag",""), ts.get("inicio_atencion_sag","")))
+        fila["intl_sag_proceso"]          = _hms(_segundos(ts.get("inicio_atencion_sag",""), ts.get("fin_sag","")))
+        fila["intl_poli_salida_fila"]     = _hms(_segundos(ts.get("inicio_fila_poli_salida",""), ts.get("inicio_atencion_poli_salida","")))
+        fila["intl_poli_salida_proceso"]  = _hms(_segundos(ts.get("inicio_atencion_poli_salida",""), ts.get("fin_poli_salida","")))
+    return fila
+
+
 def exportar_csv(sesion: Sesion) -> Path:
-    """
-    Genera un CSV con una fila por pasajero completado.
-    Las duraciones se calculan como diferencias de timestamps.
-    Retorna la ruta del archivo generado.
-    """
     aeropuerto_codigo = sesion.aeropuerto.split(" - ")[0]
     nombre_archivo = f"tiempos_{aeropuerto_codigo}_{sesion.fecha}_{sesion.id}.csv"
     ruta = CARPETA_DATOS / nombre_archivo
-
-    # Columnas del CSV (compatibles con la estructura del Excel original)
-    columnas = [
-        "sesion_id", "fecha", "aeropuerto", "encuestador",
-        "obs_id", "numero", "tipo", "linea_aerea", "vuelo",
-        # Counter
-        "counter_fila", "counter_proceso",
-        # Autochequeo
-        "auto_fila", "auto_proceso",
-        # AVSEC
-        "avsec_fila", "avsec_proceso",
-        # Equipaje llegada
-        "equipaje_primera_maleta", "equipaje_ultima_maleta",
-        "equipaje_origen", "equipaje_cinta", "equipaje_carros",
-        # Internacional
-        "intl_poli_llegada_fila", "intl_poli_llegada_proceso",
-        "intl_sag_fila", "intl_sag_proceso",
-        "intl_poli_salida_fila", "intl_poli_salida_proceso",
-        # Datos extra por pasajero
-        "modulos_servicio", "equipaje_bodega", "personas",
-    ]
-
     with open(ruta, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=columnas)
+        writer = csv.DictWriter(f, fieldnames=COLUMNAS)
         writer.writeheader()
-
         for p in sesion.completados():
-            ts = p.timestamps
-            fila: dict = {
-                "sesion_id":    sesion.id,
-                "fecha":        sesion.fecha,
-                "aeropuerto":   sesion.aeropuerto,
-                "encuestador":  sesion.encuestador,
-                "obs_id":       p.id,
-                "numero":       p.numero,
-                "tipo":         TIPOS[p.tipo][0],
-                "linea_aerea":  p.linea,
-                "vuelo":        p.vuelo,
-                # Datos extra
-                "modulos_servicio": p.extra.get("modulos", ""),
-                "equipaje_bodega":  p.extra.get("equipaje_bodega", ""),
-                "personas":         p.extra.get("personas", ""),
-                # Equipaje llegada
-                "equipaje_origen":  p.extra.get("origen", ""),
-                "equipaje_cinta":   p.extra.get("cinta", ""),
-                "equipaje_carros":  p.extra.get("carros", ""),
-            }
-
-            if p.tipo == "counter":
-                fila["counter_fila"]    = _hms(_segundos(ts.get("inicio_fila_counter",""), ts.get("inicio_atencion_counter","")))
-                fila["counter_proceso"] = _hms(_segundos(ts.get("inicio_atencion_counter",""), ts.get("fin_counter","")))
-
-            elif p.tipo == "autochequeo":
-                fila["auto_fila"]       = _hms(_segundos(ts.get("inicio_fila_auto",""), ts.get("inicio_uso_auto","")))
-                fila["auto_proceso"]    = _hms(_segundos(ts.get("inicio_uso_auto",""), ts.get("fin_auto","")))
-
-            elif p.tipo == "avsec":
-                fila["avsec_fila"]      = _hms(_segundos(ts.get("inicio_fila_avsec",""), ts.get("inicio_atencion_avsec","")))
-                fila["avsec_proceso"]   = _hms(_segundos(ts.get("inicio_atencion_avsec",""), ts.get("fin_avsec","")))
-
-            elif p.tipo == "equipaje":
-                fila["equipaje_primera_maleta"] = _hms(_segundos(ts.get("aterrizaje",""), ts.get("primera_maleta","")))
-                fila["equipaje_ultima_maleta"]  = _hms(_segundos(ts.get("aterrizaje",""), ts.get("ultima_maleta","")))
-
-            elif p.tipo == "internacional":
-                fila["intl_poli_llegada_fila"]    = _hms(_segundos(ts.get("inicio_fila_poli_llegada",""), ts.get("inicio_atencion_poli_llegada","")))
-                fila["intl_poli_llegada_proceso"] = _hms(_segundos(ts.get("inicio_atencion_poli_llegada",""), ts.get("fin_poli_llegada","")))
-                fila["intl_sag_fila"]             = _hms(_segundos(ts.get("inicio_fila_sag",""), ts.get("inicio_atencion_sag","")))
-                fila["intl_sag_proceso"]          = _hms(_segundos(ts.get("inicio_atencion_sag",""), ts.get("fin_sag","")))
-                fila["intl_poli_salida_fila"]     = _hms(_segundos(ts.get("inicio_fila_poli_salida",""), ts.get("inicio_atencion_poli_salida","")))
-                fila["intl_poli_salida_proceso"]  = _hms(_segundos(ts.get("inicio_atencion_poli_salida",""), ts.get("fin_poli_salida","")))
-
-            writer.writerow(fila)
-
+            writer.writerow(_construir_fila(sesion, p))
     return ruta
+
+
+def sincronizar_sheets(sesion: Sesion) -> int:
+    """
+    Añade las observaciones completadas de la sesión a Google Sheets.
+    Evita duplicados comparando obs_id con filas ya existentes.
+    Retorna el número de filas nuevas añadidas.
+    """
+    import gspread
+
+    creds_path = Path(__file__).parent / "credenciales_google.json"
+    gc = gspread.service_account(filename=str(creds_path))
+    sh = gc.open("Tiempos Aeropuerto")
+
+    try:
+        ws = sh.worksheet("Observaciones")
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet("Observaciones", rows=1000, cols=len(COLUMNAS))
+        ws.append_row(COLUMNAS)
+
+    # Obtener obs_ids ya registrados para evitar duplicados
+    datos = ws.get_all_values()
+    if not datos:
+        ws.append_row(COLUMNAS)
+        ids_existentes: set = set()
+    else:
+        obs_col = COLUMNAS.index("obs_id")
+        ids_existentes = {fila[obs_col] for fila in datos[1:] if len(fila) > obs_col}
+
+    nuevas = [
+        [_construir_fila(sesion, p).get(col, "") for col in COLUMNAS]
+        for p in sesion.completados()
+        if p.id not in ids_existentes
+    ]
+    if nuevas:
+        ws.append_rows(nuevas, value_input_option="USER_ENTERED")
+    return len(nuevas)

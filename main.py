@@ -6,7 +6,7 @@ import asyncio
 import flet as ft
 
 from modelos import Sesion, Pasajero, TIPOS, LINEAS_AEREAS, AEROPUERTOS
-from almacenamiento import guardar, exportar_csv
+from almacenamiento import guardar, exportar_csv, sincronizar_sheets
 
 COLOR_TIPO = {
     "counter":       ft.Colors.BLUE_700,
@@ -516,10 +516,16 @@ async def main(page: ft.Page):
             return
         try:
             ruta = exportar_csv(s)
+            msg = f"CSV guardado en:\n{ruta}"
+            try:
+                n = sincronizar_sheets(s)
+                msg += f"\n\n✓ {n} fila(s) nuevas enviadas a Google Sheets."
+            except Exception as ex_sheets:
+                msg += f"\n\n⚠ No se pudo sincronizar con Sheets:\n{ex_sheets}"
             abrir_dialogo(ft.AlertDialog(
                 modal=False,
-                title=ft.Text("CSV exportado"),
-                content=ft.Text(str(ruta)),
+                title=ft.Text("Exportado"),
+                content=ft.Text(msg),
                 actions=[ft.TextButton("OK", on_click=lambda e: cerrar_dialogo())],
             ))
         except Exception as ex:
