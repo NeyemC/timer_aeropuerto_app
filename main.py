@@ -61,11 +61,12 @@ async def main(page: ft.Page):
         page.controls.clear()
         page.controls.append(
             ft.Container(
-                expand=True, alignment=ft.Alignment(0, 0),
+                expand=True, alignment=ft.Alignment(0, -1),
                 padding=ft.Padding(40, 60, 40, 60),
                 content=ft.Column(
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=24,
+                    scroll=ft.ScrollMode.AUTO,
                     controls=[
                         ft.Icon(ft.Icons.FLIGHT, size=72,
                                 color=ft.Colors.BLUE_700),
@@ -402,6 +403,7 @@ async def main(page: ft.Page):
             title=ft.Text("Nueva Observación", weight=ft.FontWeight.BOLD),
             content=ft.Container(width=420, content=ft.Column(
                 tight=True, spacing=16,
+                scroll=ft.ScrollMode.AUTO,
                 controls=[
                     ft.Text("Tipo de proceso:", size=13,
                             weight=ft.FontWeight.W_500,
@@ -469,6 +471,7 @@ async def main(page: ft.Page):
             ]),
             content=ft.Container(width=420, content=ft.Column(
                 tight=True, spacing=14,
+                scroll=ft.ScrollMode.AUTO,
                 controls=[
                     ft.Text(f"{TIPOS[p.tipo][0]}  ·  {p.linea}  {p.vuelo}",
                             size=13, color=ft.Colors.GREY_600),
