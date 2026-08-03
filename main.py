@@ -27,6 +27,19 @@ def _borde(w, color):
 ROJO_INDATA = "#A0192A"   # rojo del logo In-Data
 
 
+def _footer() -> ft.Container:
+    return ft.Container(
+        padding=ft.Padding(0, 0, 0, 16),
+        alignment=ft.Alignment(0, 0),
+        content=ft.Text(
+            "Developed with ❤️ by Neyem Cares",
+            size=12,
+            color=ft.Colors.GREY_400,
+            text_align=ft.TextAlign.CENTER,
+        ),
+    )
+
+
 async def main(page: ft.Page):
     page.title = "Timer Aeropuerto"
     page.theme_mode = ft.ThemeMode.LIGHT
@@ -51,17 +64,27 @@ async def main(page: ft.Page):
             ft.Column(
                 expand=True,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                alignment=ft.MainAxisAlignment.CENTER,
-                spacing=24,
                 controls=[
-                    ft.Image(src="IN-DATA.png", width=300),
-                    ft.Text(
-                        "Timer Aeropuerto",
-                        size=30,
-                        weight=ft.FontWeight.BOLD,
-                        color=ROJO_INDATA,
-                        text_align=ft.TextAlign.CENTER,
+                    ft.Container(
+                        expand=True,
+                        alignment=ft.Alignment(0, 0),
+                        content=ft.Column(
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            spacing=24,
+                            controls=[
+                                ft.Image(src="IN-DATA.png", width=300),
+                                ft.Text(
+                                    "Timer Aeropuerto",
+                                    size=30,
+                                    weight=ft.FontWeight.BOLD,
+                                    color=ROJO_INDATA,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                            ],
+                        ),
                     ),
+                    _footer(),
                 ],
             )
         )
@@ -94,39 +117,43 @@ async def main(page: ft.Page):
         page.bgcolor = ft.Colors.WHITE
         page.controls.clear()
         page.controls.append(
-            ft.Container(
-                expand=True, alignment=ft.Alignment(0, -1),
-                padding=ft.Padding(40, 60, 40, 60),
-                content=ft.Column(
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    spacing=24,
-                    scroll=ft.ScrollMode.AUTO,
-                    controls=[
-                        ft.Image(
-                            src="IN-DATA.png",
-                            width=220,
+            ft.Column(
+                expand=True,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Container(
+                        expand=True, alignment=ft.Alignment(0, -1),
+                        padding=ft.Padding(40, 60, 40, 20),
+                        content=ft.Column(
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=24,
+                            scroll=ft.ScrollMode.AUTO,
+                            controls=[
+                                ft.Image(src="IN-DATA.png", width=220),
+                                ft.Text("Timer Aeropuerto",
+                                        size=26, weight=ft.FontWeight.BOLD,
+                                        text_align=ft.TextAlign.CENTER,
+                                        color=ROJO_INDATA),
+                                ft.Text("Configura la sesión antes de comenzar",
+                                        size=16, color=ft.Colors.GREY_600,
+                                        text_align=ft.TextAlign.CENTER),
+                                ft.Divider(height=8),
+                                dd, campo, error,
+                                ft.FilledButton(
+                                    "Iniciar Jornada", icon=ft.Icons.PLAY_ARROW,
+                                    on_click=iniciar,
+                                    style=ft.ButtonStyle(
+                                        padding=ft.Padding(40, 20, 40, 20),
+                                        shape=ft.RoundedRectangleBorder(radius=12),
+                                        bgcolor=ft.Colors.BLUE_700,
+                                        color=ft.Colors.WHITE,
+                                    ),
+                                ),
+                            ],
                         ),
-                        ft.Text("Timer Aeropuerto",
-                                size=26, weight=ft.FontWeight.BOLD,
-                                text_align=ft.TextAlign.CENTER,
-                                color=ROJO_INDATA),
-                        ft.Text("Configura la sesión antes de comenzar",
-                                size=16, color=ft.Colors.GREY_600,
-                                text_align=ft.TextAlign.CENTER),
-                        ft.Divider(height=8),
-                        dd, campo, error,
-                        ft.FilledButton(
-                            "Iniciar Jornada", icon=ft.Icons.PLAY_ARROW,
-                            on_click=iniciar,
-                            style=ft.ButtonStyle(
-                                padding=ft.Padding(40, 20, 40, 20),
-                                shape=ft.RoundedRectangleBorder(radius=12),
-                                bgcolor=ft.Colors.BLUE_700,
-                                color=ft.Colors.WHITE,
-                            ),
-                        ),
-                    ],
-                ),
+                    ),
+                    _footer(),
+                ],
             )
         )
         page.update()
