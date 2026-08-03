@@ -57,7 +57,6 @@ async def main(page: ft.Page):
                         ft.Image(
                             src="IN-DATA.png",
                             width=300,
-                            fit=ft.ImageFit.CONTAIN,
                         ),
                         ft.Text(
                             "Timer Aeropuerto",
