@@ -48,7 +48,7 @@ async def main(page: ft.Page):
         page.controls.append(
             ft.Container(
                 expand=True,
-                alignment=ft.alignment.center,
+                alignment=ft.Alignment(0, 0),
                 bgcolor=ft.Colors.WHITE,
                 content=ft.Column(
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
