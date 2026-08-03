@@ -583,7 +583,7 @@ async def main(page: ft.Page):
                 actions=[ft.TextButton("OK", on_click=lambda e: cerrar_dialogo())],
             ))
 
-    asyncio.create_task(mostrar_splash())
+    await mostrar_splash()
 
 
 if __name__ == "__main__":
