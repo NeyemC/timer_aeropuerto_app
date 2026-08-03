@@ -6,6 +6,6 @@ name = "Timer Aeropuerto"
 description = "Medición de tiempos de proceso aeroportuarios"
 
 [tool.flet.android]
-icon = "IN-DATA.png"
+icon = "assets/IN-DATA.png"
 splash_color = "#FFFFFF"
 splash_dark_color = "#FFFFFF"
