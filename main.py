@@ -24,8 +24,11 @@ def _borde(w, color):
     return ft.Border(left=s, top=s, right=s, bottom=s)
 
 
+ROJO_INDATA = "#A0192A"   # rojo del logo In-Data
+
+
 async def main(page: ft.Page):
-    page.title = "Tiempos Aeropuerto"
+    page.title = "Timer Aeropuerto"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
 
@@ -36,6 +39,40 @@ async def main(page: ft.Page):
     # ── diálogos ──────────────────────────────────────────────────────────
     def abrir_dialogo(dlg): page.show_dialog(dlg)
     def cerrar_dialogo():   page.pop_dialog()
+
+    # ── splash screen ─────────────────────────────────────────────────────
+    async def mostrar_splash():
+        page.bgcolor = ft.Colors.WHITE
+        page.floating_action_button = None
+        page.controls.clear()
+        page.controls.append(
+            ft.Container(
+                expand=True,
+                alignment=ft.alignment.center,
+                bgcolor=ft.Colors.WHITE,
+                content=ft.Column(
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=24,
+                    controls=[
+                        ft.Image(
+                            src="IN-DATA.png",
+                            width=300,
+                            fit=ft.ImageFit.CONTAIN,
+                        ),
+                        ft.Text(
+                            "Timer Aeropuerto",
+                            size=30,
+                            weight=ft.FontWeight.BOLD,
+                            color=ROJO_INDATA,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                    ],
+                ),
+            )
+        )
+        page.update()
+        await asyncio.sleep(2.5)
+        mostrar_setup()
 
     # ── pantalla de setup ──────────────────────────────────────────────────
     def mostrar_setup():
@@ -70,12 +107,15 @@ async def main(page: ft.Page):
                     spacing=24,
                     scroll=ft.ScrollMode.AUTO,
                     controls=[
-                        ft.Icon(ft.Icons.FLIGHT, size=72,
-                                color=ft.Colors.BLUE_700),
-                        ft.Text("Tiempos de Proceso\nAeroportuarios",
-                                size=28, weight=ft.FontWeight.BOLD,
+                        ft.Image(
+                            src="IN-DATA.png",
+                            width=220,
+                            fit=ft.ImageFit.CONTAIN,
+                        ),
+                        ft.Text("Timer Aeropuerto",
+                                size=26, weight=ft.FontWeight.BOLD,
                                 text_align=ft.TextAlign.CENTER,
-                                color=ft.Colors.BLUE_900),
+                                color=ROJO_INDATA),
                         ft.Text("Configura la sesión antes de comenzar",
                                 size=16, color=ft.Colors.GREY_600,
                                 text_align=ft.TextAlign.CENTER),
@@ -543,8 +583,8 @@ async def main(page: ft.Page):
                 actions=[ft.TextButton("OK", on_click=lambda e: cerrar_dialogo())],
             ))
 
-    mostrar_setup()
+    asyncio.create_task(mostrar_splash())
 
 
 if __name__ == "__main__":
-    ft.run(main)
+    ft.app(target=main, assets_dir=".")
