@@ -44,29 +44,25 @@ async def main(page: ft.Page):
     async def mostrar_splash():
         page.bgcolor = ft.Colors.WHITE
         page.floating_action_button = None
+        page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+        page.vertical_alignment   = ft.MainAxisAlignment.CENTER
         page.controls.clear()
         page.controls.append(
-            ft.Container(
+            ft.Column(
                 expand=True,
-                alignment=ft.Alignment(0, 0),
-                bgcolor=ft.Colors.WHITE,
-                content=ft.Column(
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    spacing=24,
-                    controls=[
-                        ft.Image(
-                            src="IN-DATA.png",
-                            width=300,
-                        ),
-                        ft.Text(
-                            "Timer Aeropuerto",
-                            size=30,
-                            weight=ft.FontWeight.BOLD,
-                            color=ROJO_INDATA,
-                            text_align=ft.TextAlign.CENTER,
-                        ),
-                    ],
-                ),
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=24,
+                controls=[
+                    ft.Image(src="IN-DATA.png", width=300),
+                    ft.Text(
+                        "Timer Aeropuerto",
+                        size=30,
+                        weight=ft.FontWeight.BOLD,
+                        color=ROJO_INDATA,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                ],
             )
         )
         page.update()
@@ -109,7 +105,6 @@ async def main(page: ft.Page):
                         ft.Image(
                             src="IN-DATA.png",
                             width=220,
-                            fit=ft.ImageFit.CONTAIN,
                         ),
                         ft.Text("Timer Aeropuerto",
                                 size=26, weight=ft.FontWeight.BOLD,
