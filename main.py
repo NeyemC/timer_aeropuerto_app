@@ -13,7 +13,9 @@ COLOR_TIPO = {
     "autochequeo":   ft.Colors.GREEN_700,
     "avsec":         ft.Colors.TEAL_700,
     "equipaje":      ft.Colors.ORANGE_700,
-    "internacional": ft.Colors.PURPLE_700,
+    "poli_llegada":  ft.Colors.PURPLE_700,
+    "sag":           ft.Colors.INDIGO_700,
+    "poli_salida":   ft.Colors.DEEP_PURPLE_700,
 }
 
 
@@ -353,9 +355,11 @@ async def main(page: ft.Page):
         chips_data = [
             ("counter",       "Counter",       ft.Icons.AIRLINE_SEAT_RECLINE_NORMAL),
             ("autochequeo",   "Autochequeo",   ft.Icons.COMPUTER),
-            ("avsec",         "AVSEC",         ft.Icons.SECURITY),
-            ("equipaje",      "Equipaje",      ft.Icons.LUGGAGE),
-            ("internacional", "Internacional", ft.Icons.PUBLIC),
+            ("avsec",        "AVSEC",              ft.Icons.SECURITY),
+            ("equipaje",     "Equipaje",           ft.Icons.LUGGAGE),
+            ("poli_llegada", "Policía Int. Lleg.", ft.Icons.BADGE),
+            ("sag",          "SAG / Aduana",       ft.Icons.GRASS),
+            ("poli_salida",  "Policía Int. Sal.",  ft.Icons.BADGE_OUTLINED),
         ]
 
         def hacer_chip(key, lbl, icon):

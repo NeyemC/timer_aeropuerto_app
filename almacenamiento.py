@@ -129,11 +129,13 @@ def _construir_fila(sesion: Sesion, p: Pasajero) -> dict:
     elif p.tipo == "equipaje":
         fila["equipaje_primera_maleta"] = _hms(_segundos(ts.get("aterrizaje",""), ts.get("primera_maleta","")))
         fila["equipaje_ultima_maleta"]  = _hms(_segundos(ts.get("aterrizaje",""), ts.get("ultima_maleta","")))
-    elif p.tipo == "internacional":
+    elif p.tipo == "poli_llegada":
         fila["intl_poli_llegada_fila"]    = _hms(_segundos(ts.get("inicio_fila_poli_llegada",""), ts.get("inicio_atencion_poli_llegada","")))
         fila["intl_poli_llegada_proceso"] = _hms(_segundos(ts.get("inicio_atencion_poli_llegada",""), ts.get("fin_poli_llegada","")))
+    elif p.tipo == "sag":
         fila["intl_sag_fila"]             = _hms(_segundos(ts.get("inicio_fila_sag",""), ts.get("inicio_atencion_sag","")))
         fila["intl_sag_proceso"]          = _hms(_segundos(ts.get("inicio_atencion_sag",""), ts.get("fin_sag","")))
+    elif p.tipo == "poli_salida":
         fila["intl_poli_salida_fila"]     = _hms(_segundos(ts.get("inicio_fila_poli_salida",""), ts.get("inicio_atencion_poli_salida","")))
         fila["intl_poli_salida_proceso"]  = _hms(_segundos(ts.get("inicio_atencion_poli_salida",""), ts.get("fin_poli_salida","")))
     return fila

@@ -37,34 +37,43 @@ ETAPAS_EQUIPAJE = [
     ("ultima_maleta",            "Última Maleta en Cinta"),
 ]
 
-ETAPAS_INTERNACIONAL = [
-    ("inicio_fila_poli_llegada",     "Inicio Fila Policía Llegada"),
-    ("inicio_atencion_poli_llegada", "Inicio Atención Policía Llegada"),
-    ("fin_poli_llegada",             "Fin Policía Llegada"),
+ETAPAS_POLI_LLEGADA = [
+    ("inicio_fila_poli_llegada",     "Inicio Fila Policía Internacional Llegadas"),
+    ("inicio_atencion_poli_llegada", "Inicio Atención Policía Internacional Llegadas"),
+    ("fin_poli_llegada",             "Fin Policía Internacional Llegadas"),
+]
+
+ETAPAS_SAG = [
     ("inicio_fila_sag",              "Inicio Fila SAG / Aduana"),
     ("inicio_atencion_sag",          "Inicio Atención SAG / Aduana"),
     ("fin_sag",                      "Fin SAG / Aduana"),
-    ("inicio_fila_poli_salida",      "Inicio Fila Policía Salida"),
-    ("inicio_atencion_poli_salida",  "Inicio Atención Policía Salida"),
-    ("fin_poli_salida",              "Fin Policía Salida"),
+]
+
+ETAPAS_POLI_SALIDA = [
+    ("inicio_fila_poli_salida",      "Inicio Fila Policía Internacional Salidas"),
+    ("inicio_atencion_poli_salida",  "Inicio Atención Policía Internacional Salidas"),
+    ("fin_poli_salida",              "Fin Policía Internacional Salidas"),
 ]
 
 TIPOS = {
-    "counter":       ("Counter",               ETAPAS_COUNTER),
-    "autochequeo":   ("Autochequeo",           ETAPAS_AUTOCHEQUEO),
-    "avsec":         ("AVSEC",                 ETAPAS_AVSEC),
-    "equipaje":      ("Equipaje Llegada",      ETAPAS_EQUIPAJE),
-    "internacional": ("Llegada Internacional", ETAPAS_INTERNACIONAL),
+    "counter":       ("Counter",                        ETAPAS_COUNTER),
+    "autochequeo":   ("Autochequeo",                   ETAPAS_AUTOCHEQUEO),
+    "avsec":         ("AVSEC",                          ETAPAS_AVSEC),
+    "equipaje":      ("Equipaje Llegada",               ETAPAS_EQUIPAJE),
+    "poli_llegada":  ("Policía Int. Llegadas",          ETAPAS_POLI_LLEGADA),
+    "sag":           ("SAG / Aduana",                   ETAPAS_SAG),
+    "poli_salida":   ("Policía Int. Salidas",           ETAPAS_POLI_SALIDA),
 }
 
 LINEAS_AEREAS = ["LATAM", "Sky Airline", "JetSmart", "DAP"]
 
 AEROPUERTOS = [
-    "PUQ - Punta Arenas",
+    "ANF - Antofagasta",
     "ARI - Arica",
     "BBA - Balmaceda",
     "CPO - Copiapó",
     "LSC - La Serena",
+    "PUQ - Punta Arenas",
 ]
 
 
