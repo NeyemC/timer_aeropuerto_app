@@ -29,7 +29,7 @@ ROJO_INDATA = "#A0192A"   # rojo del logo In-Data
 
 def _footer() -> ft.Container:
     return ft.Container(
-        padding=ft.Padding(0, 0, 0, 16),
+        padding=ft.Padding(0, 0, 0, 56),
         alignment=ft.Alignment(0, 0),
         content=ft.Text(
             "Developed with ❤️ by Neyem Cares",
@@ -54,7 +54,10 @@ async def main(page: ft.Page):
     def cerrar_dialogo():   page.pop_dialog()
 
     # ── splash screen ─────────────────────────────────────────────────────
-    async def mostrar_splash():
+    # La UI se construye de forma sincrónica para que Flutter la pinte
+    # de inmediato. Solo la espera + navegación van en una tarea aparte,
+    # evitando bloquear el loop principal en Android.
+    def _construir_splash():
         page.bgcolor = ft.Colors.WHITE
         page.floating_action_button = None
         page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
@@ -89,6 +92,8 @@ async def main(page: ft.Page):
             )
         )
         page.update()
+
+    async def _navegar_tras_splash():
         await asyncio.sleep(2.5)
         mostrar_setup()
 
@@ -604,7 +609,9 @@ async def main(page: ft.Page):
                 actions=[ft.TextButton("OK", on_click=lambda e: cerrar_dialogo())],
             ))
 
-    await mostrar_splash()
+    # Renderiza la splash de forma sincrónica y programa la navegación aparte
+    _construir_splash()
+    asyncio.create_task(_navegar_tras_splash())
 
 
 if __name__ == "__main__":
