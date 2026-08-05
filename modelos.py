@@ -170,6 +170,71 @@ class Pasajero:
 
 
 # ---------------------------------------------------------------------------
+# Módulo B — Encuestas de satisfacción
+# ---------------------------------------------------------------------------
+
+PREGUNTAS_ES = [
+    ("estacionamiento_disp",    "Disponibilidad de estacionamientos"),
+    ("estacionamiento_precio",  "Relación precio calidad de estacionamientos"),
+    ("bancos_cajeros",          "Disponibilidad de bancos, cajeros automáticos, casas de cambio"),
+    ("aseo",                    "Aseo en las áreas de circulación pública peatonal"),
+]
+
+PREGUNTAS_EN = [
+    ("estacionamiento_disp",    "Availability of parking facilities"),
+    ("estacionamiento_precio",  "Value for money of parking facilities"),
+    ("bancos_cajeros",          "Availability of bank / ATM facilities / money changers"),
+    ("aseo",                    "Cleaning in pedestrian public circulation areas"),
+]
+
+OPCIONES_ES = [
+    (1, "Malo"),
+    (2, "Regular"),
+    (3, "Bueno"),
+    (4, "Muy Bueno"),
+    (5, "Excelente"),
+    (0, "No se percató / No lo utilizó"),
+]
+
+OPCIONES_EN = [
+    (1, "Poor"),
+    (2, "Fair"),
+    (3, "Good"),
+    (4, "Very Good"),
+    (5, "Excellent"),
+    (0, "Did not notice / Did not use"),
+]
+
+
+class Encuesta:
+    """Una respuesta de satisfacción de un pasajero (módulo B)."""
+
+    def __init__(self, numero: int):
+        self.numero = numero
+        self.respuestas: dict[str, int | None] = {
+            clave: None for clave, _ in PREGUNTAS_ES
+        }
+        self.creado_en = datetime.now().isoformat()
+
+    def completa(self) -> bool:
+        return all(v is not None for v in self.respuestas.values())
+
+    def to_dict(self) -> dict:
+        return {
+            "numero": self.numero,
+            "respuestas": self.respuestas,
+            "creado_en": self.creado_en,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Encuesta":
+        e = cls(d["numero"])
+        e.respuestas = d["respuestas"]
+        e.creado_en = d["creado_en"]
+        return e
+
+
+# ---------------------------------------------------------------------------
 # Clase Sesión
 # ---------------------------------------------------------------------------
 
@@ -178,13 +243,23 @@ class Sesion:
     Agrupa todas las observaciones de una jornada de trabajo.
     """
 
-    def __init__(self, aeropuerto: str, encuestador: str, fecha: str | None = None):
+    def __init__(self, aeropuerto: str, encuestador: str, fecha: str | None = None,
+                 modulo: str = "tiempos"):
         self.id = str(uuid.uuid4())[:8].upper()
         self.aeropuerto = aeropuerto
         self.encuestador = encuestador
         self.fecha = fecha or datetime.now().strftime("%Y-%m-%d")
+        self.modulo = modulo          # "tiempos" | "encuestas"
         self.pasajeros: list[Pasajero] = []
+        self.encuestas: list[Encuesta] = []
         self._contador = 0
+        self.finalizada = False
+
+    def agregar_encuesta(self) -> Encuesta:
+        self._contador += 1
+        e = Encuesta(self._contador)
+        self.encuestas.append(e)
+        return e
 
     def agregar_pasajero(self, tipo: str, linea: str, vuelo: str, extra: dict | None = None) -> Pasajero:
         self._contador += 1
@@ -204,14 +279,20 @@ class Sesion:
             "aeropuerto": self.aeropuerto,
             "encuestador": self.encuestador,
             "fecha": self.fecha,
+            "modulo": self.modulo,
             "contador": self._contador,
+            "finalizada": self.finalizada,
             "pasajeros": [p.to_dict() for p in self.pasajeros],
+            "encuestas": [e.to_dict() for e in self.encuestas],
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "Sesion":
-        s = cls(d["aeropuerto"], d["encuestador"], d["fecha"])
+        s = cls(d["aeropuerto"], d["encuestador"], d["fecha"],
+                modulo=d.get("modulo", "tiempos"))
         s.id = d["id"]
         s._contador = d["contador"]
+        s.finalizada = d.get("finalizada", False)
         s.pasajeros = [Pasajero.from_dict(p) for p in d["pasajeros"]]
+        s.encuestas = [Encuesta.from_dict(e) for e in d.get("encuestas", [])]
         return s

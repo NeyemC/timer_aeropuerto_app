@@ -11,7 +11,7 @@ import os
 import re as _re
 from datetime import datetime
 from pathlib import Path
-from modelos import Sesion, Pasajero, TIPOS
+from modelos import Sesion, Pasajero, TIPOS, PREGUNTAS_ES
 
 # En Android el app corre en /data/user/0/<pkg>/ o /data/data/<pkg>/
 # Usamos la carpeta interna del app (files/) que siempre es escribible.
@@ -56,10 +56,20 @@ def listar_sesiones() -> list[dict]:
                 "fecha": d["fecha"],
                 "total": len(d["pasajeros"]),
                 "completados": sum(1 for p in d["pasajeros"] if p["estado"] == "completado"),
+                "finalizada": d.get("finalizada", False),
             })
         except Exception:
             pass
     return sorted(sesiones, key=lambda s: s["fecha"], reverse=True)
+
+
+def obtener_sesion_activa() -> Sesion | None:
+    """Retorna la sesión de hoy que no ha sido finalizada, o None."""
+    hoy = datetime.now().strftime("%Y-%m-%d")
+    for meta in listar_sesiones():
+        if meta["fecha"] == hoy and not meta.get("finalizada", False):
+            return cargar(meta["id"])
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +163,7 @@ def exportar_csv(sesion: Sesion) -> Path:
     return ruta
 
 
-_GAS_URL = "https://script.google.com/macros/s/AKfycby0J5Fe9HLlDfjjKhiKqcTgmDeRvUZ2dJLIhNCwljoIdrLYtQCza3SYF8JweYbN9l8c/exec"
+_GAS_URL = "https://script.google.com/macros/s/AKfycbxq__snenjRmu1gFyZQl3o79MPx9YHcB7vcxE76MlBSI51XWD2IRoSVRhCOaWYGHoI/exec"
 
 
 def sincronizar_sheets(sesion: Sesion) -> int:
@@ -174,6 +184,78 @@ def sincronizar_sheets(sesion: Sesion) -> int:
     payload = json.dumps({"columnas": COLUMNAS, "filas": filas}).encode("utf-8")
     req = urllib.request.Request(
         _GAS_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        n = int(resp.read().decode("utf-8").strip())
+    return n
+
+
+# ---------------------------------------------------------------------------
+# Módulo B — Encuestas de satisfacción
+# ---------------------------------------------------------------------------
+
+COLUMNAS_ENCUESTA = [
+    "sesion_id", "fecha", "aeropuerto", "encuestador", "numero",
+    "estacionamiento_disp", "estacionamiento_precio",
+    "bancos_cajeros", "aseo",
+]
+
+_GAS_URL_ENCUESTAS = "https://script.google.com/macros/s/AKfycbxq__snenjRmu1gFyZQl3o79MPx9YHcB7vcxE76MlBSI51XWD2IRoSVRhCOaWYGHoI/exec"
+
+
+def exportar_csv_encuestas(sesion: Sesion) -> Path:
+    aeropuerto_codigo = sesion.aeropuerto.split(" - ")[0]
+    nombre_archivo = f"encuestas_{aeropuerto_codigo}_{sesion.fecha}_{sesion.id}.csv"
+    ruta = CARPETA_DATOS / nombre_archivo
+    with open(ruta, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=COLUMNAS_ENCUESTA)
+        writer.writeheader()
+        for e in sesion.encuestas:
+            if not e.completa():
+                continue
+            fila = {
+                "sesion_id":   sesion.id,
+                "fecha":       sesion.fecha,
+                "aeropuerto":  sesion.aeropuerto,
+                "encuestador": sesion.encuestador,
+                "numero":      e.numero,
+            }
+            for clave, _ in PREGUNTAS_ES:
+                v = e.respuestas.get(clave)
+                fila[clave] = "" if v is None else v
+            writer.writerow(fila)
+    return ruta
+
+
+def sincronizar_sheets_encuestas(sesion: Sesion) -> int:
+    import urllib.request
+
+    filas = []
+    for e in [x for x in sesion.encuestas if x.completa()]:
+        fila = {
+            "sesion_id":   sesion.id,
+            "fecha":       sesion.fecha,
+            "aeropuerto":  sesion.aeropuerto,
+            "encuestador": sesion.encuestador,
+            "numero":      e.numero,
+        }
+        for clave, _ in PREGUNTAS_ES:
+            v = e.respuestas.get(clave)
+            fila[clave] = "" if v is None else v
+        filas.append([str(fila.get(col, "")) for col in COLUMNAS_ENCUESTA])
+
+    if not filas:
+        return 0
+
+    payload = json.dumps({
+        "hoja": "encuestas",
+        "columnas": COLUMNAS_ENCUESTA,
+        "filas": filas,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        _GAS_URL_ENCUESTAS,
         data=payload,
         headers={"Content-Type": "application/json"},
     )

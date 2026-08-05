@@ -7,5 +7,5 @@ description = "Medición de tiempos de proceso aeroportuarios"
 
 [tool.flet.android]
 icon = "assets/icon.png"
-splash_color = "#FFFFFF"
-splash_dark_color = "#FFFFFF"
+splash_color = "#000000"
+splash_dark_color = "#000000"
