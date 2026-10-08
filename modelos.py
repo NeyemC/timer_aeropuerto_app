@@ -88,7 +88,8 @@ class Pasajero:
     """
 
     def __init__(self, tipo: str, linea: str, vuelo: str, numero: int, extra: dict | None = None):
-        self.id = str(uuid.uuid4())[:6].upper()
+        # Prefijo no numérico: Sheets nunca lo convierte a número ("94E099" → 9.4E+99)
+        self.id = "OBS-" + uuid.uuid4().hex[:12].upper()
         self.tipo = tipo
         self.linea = linea
         self.vuelo = vuelo
@@ -254,6 +255,7 @@ class Sesion:
         self.encuestas: list[Encuesta] = []
         self._contador = 0
         self.finalizada = False
+        self.sincronizada = False     # True cuando Google Sheets confirmó la recepción
 
     def agregar_encuesta(self) -> Encuesta:
         self._contador += 1
@@ -282,6 +284,7 @@ class Sesion:
             "modulo": self.modulo,
             "contador": self._contador,
             "finalizada": self.finalizada,
+            "sincronizada": self.sincronizada,
             "pasajeros": [p.to_dict() for p in self.pasajeros],
             "encuestas": [e.to_dict() for e in self.encuestas],
         }
@@ -293,6 +296,9 @@ class Sesion:
         s.id = d["id"]
         s._contador = d["contador"]
         s.finalizada = d.get("finalizada", False)
+        # Sesiones antiguas sin el campo: las finalizadas se asumen ya enviadas para no
+        # reenviar IDs que Sheets ya convirtió a número (se duplicarían)
+        s.sincronizada = d.get("sincronizada", s.finalizada)
         s.pasajeros = [Pasajero.from_dict(p) for p in d["pasajeros"]]
         s.encuestas = [Encuesta.from_dict(e) for e in d.get("encuestas", [])]
         return s

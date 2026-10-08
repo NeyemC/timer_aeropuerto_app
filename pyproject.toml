@@ -1,9 +1,19 @@
+[project]
+# El nombre define el paquete Android (cl.indata.timer_aeropuerto_app): no cambiarlo
+# o el APK se instalará como otra app distinta
+name = "timer_aeropuerto_app"
+version = "1.1.0"
+
 [tool.flet]
 org = "cl.indata"
+build_number = 2    # versionCode de Android: subirlo en cada versión nueva
 
 [tool.flet.app]
 name = "Timer Aeropuerto"
 description = "Medición de tiempos de proceso aeroportuarios"
+# No empaquetar en el APK el historial git ni cachés (no acepta comodines como *.md:
+# compilar desde una copia limpia con solo los archivos del repo)
+exclude = [".git", ".gitignore", "__pycache__", "build"]
 
 [tool.flet.android]
 icon = "assets/icon.png"

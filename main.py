@@ -3,13 +3,14 @@ App de Tiempos de Proceso Aeroportuarios
 """
 
 import asyncio
+import time
+from pathlib import Path
 import flet as ft
 
 from modelos import (Sesion, Pasajero, Encuesta, TIPOS, LINEAS_AEREAS, AEROPUERTOS,
                      PREGUNTAS_ES, PREGUNTAS_EN, OPCIONES_ES, OPCIONES_EN)
-from almacenamiento import (guardar, exportar_csv, sincronizar_sheets,
-                            exportar_csv_encuestas, sincronizar_sheets_encuestas,
-                            obtener_sesion_activa)
+from almacenamiento import (guardar, exportar_csv, exportar_csv_encuestas,
+                            sincronizar, sesiones_pendientes, obtener_sesion_activa)
 
 COLOR_TIPO = {
     "counter":       ft.Colors.BLUE_400,
@@ -30,15 +31,41 @@ def _borde(w, color):
 ROJO_INDATA = "#E8394A"   # rojo más brillante para fondo oscuro
 
 
+def _version() -> str:
+    """Versión y commit desde build_info.txt (lo genera build_apk.sh al compilar).
+    Sin ese archivo (ej. al correr desde el código fuente) retorna 'dev'."""
+    try:
+        info = dict(
+            linea.split("=", 1)
+            for linea in (Path(__file__).parent / "build_info.txt")
+            .read_text(encoding="utf-8").splitlines()
+            if "=" in linea
+        )
+        return f"v{info['version']} ({info['commit'][:7]})"
+    except Exception:
+        return "dev"
+
+
+VERSION = _version()
+
+
 def _footer() -> ft.Container:
     return ft.Container(
         padding=ft.Padding(0, 0, 0, 56),
         alignment=ft.Alignment(0, 0),
-        content=ft.Text(
-            "Developed with ❤️ by Neyem Cares",
-            size=12,
-            color=ft.Colors.GREY_600,
-            text_align=ft.TextAlign.CENTER,
+        content=ft.Column(
+            spacing=2,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Text(
+                    "Developed with ❤️ by Neyem Cares",
+                    size=12,
+                    color=ft.Colors.GREY_600,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                ft.Text(VERSION, size=10, color=ft.Colors.GREY_700,
+                        text_align=ft.TextAlign.CENTER),
+            ],
         ),
     )
 
@@ -50,11 +77,85 @@ async def main(page: ft.Page):
 
     sesion:       list[Sesion | None] = [None]
     tarjetas_ref: dict[str, ft.Text]  = {}
+    ultimo_registro: dict[str, float] = {}   # id pasajero → time.monotonic() del último tap
     timer_id = [0]
 
     # ── diálogos ──────────────────────────────────────────────────────────
     def abrir_dialogo(dlg): page.show_dialog(dlg)
     def cerrar_dialogo():   page.pop_dialog()
+
+    # ── finalizar sesión (ambos módulos) ───────────────────────────────────
+    async def finalizar_sesion(s: Sesion, exportar, resumen: str):
+        """Exporta CSV, envía a Sheets sin congelar la UI y vuelve al setup.
+        La sesión se marca finalizada antes de enviar: si el envío falla queda
+        pendiente y se reintenta desde la pantalla de inicio."""
+        abrir_dialogo(ft.AlertDialog(
+            modal=True,
+            content=ft.Row(spacing=16, tight=True, controls=[
+                ft.ProgressRing(width=28, height=28),
+                ft.Text("Enviando datos a Google Sheets…"),
+            ]),
+        ))
+        msg_extra = ""
+        try:
+            exportar(s)
+        except Exception as ex:
+            msg_extra += f"\n⚠ Error al exportar CSV:\n{ex}"
+        s.finalizada = True
+        guardar(s)
+        try:
+            n = await asyncio.to_thread(sincronizar, s)
+            msg_extra += f"\n✓ {n} fila(s) enviadas a Google Sheets."
+        except Exception as ex:
+            msg_extra += (f"\n⚠ No se pudo enviar a Google Sheets:\n{ex}\n\n"
+                          "Los datos quedaron guardados en el teléfono. El envío se "
+                          "reintentará desde la pantalla de inicio.")
+        cerrar_dialogo()
+
+        def ir_a_setup(_e):
+            cerrar_dialogo()
+            mostrar_setup()
+        abrir_dialogo(ft.AlertDialog(
+            modal=True,
+            title=ft.Row(spacing=8, controls=[
+                ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN_400, size=24),
+                ft.Text("Sesión finalizada"),
+            ]),
+            content=ft.Text(resumen + msg_extra),
+            actions=[ft.FilledButton(
+                "Aceptar", on_click=ir_a_setup,
+                style=ft.ButtonStyle(
+                    bgcolor=ft.Colors.BLUE_700, color=ft.Colors.WHITE),
+            )],
+            actions_alignment=ft.MainAxisAlignment.END,
+        ))
+
+    def dialogo_confirmar_finalizar(texto: str, al_confirmar):
+        en_curso = [False]   # evita finalizar dos veces con un doble toque
+
+        async def confirmar(_e):
+            if en_curso[0]:
+                return
+            en_curso[0] = True
+            cerrar_dialogo()
+            await al_confirmar()
+
+        abrir_dialogo(ft.AlertDialog(
+            modal=True,
+            title=ft.Text("¿Finalizar sesión?", weight=ft.FontWeight.BOLD),
+            content=ft.Text(texto),
+            actions=[
+                ft.TextButton("Cancelar", on_click=lambda e: cerrar_dialogo()),
+                ft.FilledButton(
+                    "Finalizar y guardar",
+                    icon=ft.Icons.SAVE_ALT,
+                    style=ft.ButtonStyle(
+                        bgcolor=ft.Colors.GREEN_700, color=ft.Colors.WHITE),
+                    on_click=confirmar,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        ))
 
     # ── splash screen ─────────────────────────────────────────────────────
     def _construir_splash():
@@ -112,6 +213,7 @@ async def main(page: ft.Page):
 
     # ── pantalla de setup ──────────────────────────────────────────────────
     def mostrar_setup():
+        timer_id[0] += 1   # detiene el timer de la pantalla anterior
         campo = ft.TextField(
             label="Nombre del encuestador", hint_text="Ej: Juan Pérez",
             prefix_icon=ft.Icons.PERSON, autofocus=True, border_radius=12)
@@ -120,6 +222,47 @@ async def main(page: ft.Page):
             options=[ft.dropdown.Option(a) for a in AEROPUERTOS],
             border_radius=12)
         error = ft.Text("", color=ft.Colors.RED_400, size=13)
+
+        # Aviso de sesiones finalizadas que no se pudieron enviar a Sheets
+        txt_pend = ft.Text("", size=13, color=ft.Colors.ORANGE_200)
+        btn_pend = ft.TextButton("Enviar ahora", icon=ft.Icons.CLOUD_UPLOAD)
+        banner = ft.Container(
+            visible=False,
+            bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.ORANGE_400),
+            border_radius=12,
+            padding=ft.Padding(14, 10, 8, 10),
+            content=ft.Row(
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(ft.Icons.CLOUD_OFF, color=ft.Colors.ORANGE_300),
+                    ft.Column(expand=True, controls=[txt_pend]),
+                    btn_pend,
+                ]),
+        )
+
+        async def enviar_pendientes(_e=None):
+            pendientes = sesiones_pendientes()
+            if not pendientes:
+                banner.visible = False
+                page.update()
+                return
+            banner.visible = True
+            btn_pend.disabled = True
+            txt_pend.value = f"Enviando {len(pendientes)} sesión(es) pendiente(s)…"
+            page.update()
+            for pendiente in pendientes:
+                try:
+                    await asyncio.to_thread(sincronizar, pendiente)
+                except Exception:
+                    pass
+            restantes = len(sesiones_pendientes())
+            banner.visible = restantes > 0
+            txt_pend.value = (f"{restantes} sesión(es) sin enviar a Google Sheets. "
+                              "Revisa la conexión e intenta de nuevo.")
+            btn_pend.disabled = False
+            page.update()
+
+        btn_pend.on_click = enviar_pendientes
 
         async def iniciar(e):
             if not campo.value or not dd.value:
@@ -161,6 +304,7 @@ async def main(page: ft.Page):
                                         size=16, color=ft.Colors.GREY_400,
                                         text_align=ft.TextAlign.CENTER),
                                 ft.Divider(height=8, color=ft.Colors.GREY_800),
+                                banner,
                                 dd, campo, error,
                                 ft.FilledButton(
                                     "Iniciar Jornada", icon=ft.Icons.PLAY_ARROW,
@@ -180,6 +324,7 @@ async def main(page: ft.Page):
             )
         )
         page.update()
+        asyncio.create_task(enviar_pendientes())
 
     # ── selector de módulo ────────────────────────────────────────────────
     def mostrar_selector_modulo():
@@ -263,23 +408,25 @@ async def main(page: ft.Page):
 
     # ── módulo B — encuestas ───────────────────────────────────────────────
     def mostrar_encuestas():
+        timer_id[0] += 1
         s = sesion[0]
         idioma = ["es"]   # estado mutable del idioma actual
+        # Encuesta en curso: vive fuera de la grilla para que cambiar de idioma
+        # no borre las respuestas ya marcadas
+        actual = [Encuesta(s._contador + 1)]
+        enviando = [False]   # evita guardar la misma encuesta dos veces
 
         def construir_grilla():
             preguntas = PREGUNTAS_ES if idioma[0] == "es" else PREGUNTAS_EN
             opciones  = OPCIONES_ES  if idioma[0] == "es" else OPCIONES_EN
-            encuesta_actual = Encuesta(s._contador + 1)
-
-            sel: dict[str, int | None] = {clave: None for clave, _ in preguntas}
+            encuesta_actual = actual[0]
 
             def hacer_opcion(clave, valor, etiqueta):
                 def click(e):
-                    sel[clave] = valor
                     encuesta_actual.respuestas[clave] = valor
                     reconstruir_fila(clave)
                     page.update()
-                elegido = sel[clave] == valor
+                elegido = encuesta_actual.respuestas[clave] == valor
                 color = (ft.Colors.PURPLE_400 if valor > 0
                          else ft.Colors.GREY_600)
                 return ft.Container(
@@ -313,11 +460,8 @@ async def main(page: ft.Page):
                 ])
 
             def reconstruir_fila(clave):
-                preguntas_act = PREGUNTAS_ES if idioma[0] == "es" else PREGUNTAS_EN
-                opciones_act  = OPCIONES_ES  if idioma[0] == "es" else OPCIONES_EN
-                texto = next(t for c, t in preguntas_act if c == clave)
                 filas_ref[clave].controls = [
-                    hacer_opcion(clave, v, lbl) for v, lbl in opciones_act
+                    hacer_opcion(clave, v, lbl) for v, lbl in opciones
                 ]
 
             columna_preguntas = ft.Column(
@@ -326,6 +470,8 @@ async def main(page: ft.Page):
             )
 
             async def enviar(e):
+                if enviando[0]:
+                    return
                 if not encuesta_actual.completa():
                     lbl_error.value = (
                         "Por favor responde todas las preguntas."
@@ -334,6 +480,7 @@ async def main(page: ft.Page):
                     )
                     page.update()
                     return
+                enviando[0] = True
                 s._contador += 1
                 encuesta_actual.numero = s._contador
                 s.encuestas.append(encuesta_actual)
@@ -341,6 +488,8 @@ async def main(page: ft.Page):
                 # Mensaje de confirmación bilingüe
                 def siguiente(_e):
                     cerrar_dialogo()
+                    actual[0] = Encuesta(s._contador + 1)
+                    enviando[0] = False
                     construir_grilla()
                     page.update()
                 abrir_dialogo(ft.AlertDialog(
@@ -399,62 +548,17 @@ async def main(page: ft.Page):
 
         def cambiar_idioma(e):
             idioma[0] = "en" if idioma[0] == "es" else "es"
-            btn_idioma.text = "ES" if idioma[0] == "en" else "EN"
+            # En Flet 0.85 el texto del botón es `content` (`.text` no existe)
+            btn_idioma.content = "ES" if idioma[0] == "en" else "EN"
             construir_grilla()
 
         async def finalizar_encuestas(_e):
-            async def confirmar(_e2):
-                cerrar_dialogo()
-                msg_extra = ""
-                try:
-                    exportar_csv_encuestas(s)
-                    try:
-                        n = sincronizar_sheets_encuestas(s)
-                        msg_extra = f"\n✓ {n} fila(s) enviadas a Google Sheets."
-                    except Exception as ex:
-                        msg_extra = f"\n⚠ No se pudo sincronizar:\n{ex}"
-                except Exception as ex:
-                    msg_extra = f"\n⚠ Error al exportar:\n{ex}"
-                s.finalizada = True
-                guardar(s)
-                def ir_a_setup(_e3):
-                    cerrar_dialogo()
-                    mostrar_setup()
-                abrir_dialogo(ft.AlertDialog(
-                    modal=True,
-                    title=ft.Row(spacing=8, controls=[
-                        ft.Icon(ft.Icons.CHECK_CIRCLE,
-                                color=ft.Colors.GREEN_400, size=24),
-                        ft.Text("Sesión finalizada"),
-                    ]),
-                    content=ft.Text(
-                        f"Se registraron {len(s.encuestas)} encuesta(s).{msg_extra}"),
-                    actions=[ft.FilledButton(
-                        "Aceptar", on_click=ir_a_setup,
-                        style=ft.ButtonStyle(
-                            bgcolor=ft.Colors.BLUE_700,
-                            color=ft.Colors.WHITE),
-                    )],
-                    actions_alignment=ft.MainAxisAlignment.END,
-                ))
-
-            abrir_dialogo(ft.AlertDialog(
-                modal=True,
-                title=ft.Text("¿Finalizar sesión?", weight=ft.FontWeight.BOLD),
-                content=ft.Text(
-                    f"Se guardarán {len(s.encuestas)} encuesta(s) y se cerrará la sesión."),
-                actions=[
-                    ft.TextButton("Cancelar",
-                                  on_click=lambda e: cerrar_dialogo()),
-                    ft.FilledButton(
-                        "Finalizar y guardar", icon=ft.Icons.SAVE_ALT,
-                        style=ft.ButtonStyle(
-                            bgcolor=ft.Colors.GREEN_700,
-                            color=ft.Colors.WHITE),
-                        on_click=confirmar),
-                ],
-                actions_alignment=ft.MainAxisAlignment.END,
-            ))
+            dialogo_confirmar_finalizar(
+                f"Se guardarán {len(s.encuestas)} encuesta(s) y se cerrará la sesión.",
+                lambda: finalizar_sesion(
+                    s, exportar_csv_encuestas,
+                    f"Se registraron {len(s.encuestas)} encuesta(s)."),
+            )
 
         btn_idioma = ft.ElevatedButton(
             "EN",
@@ -657,6 +761,11 @@ async def main(page: ft.Page):
         tarjetas_ref[p.id] = w_timer
 
         async def on_registrar(e):
+            # Un doble toque registraría dos etapas casi al mismo tiempo
+            ahora = time.monotonic()
+            if p.estado != "activo" or ahora - ultimo_registro.get(p.id, 0) < 1.0:
+                return
+            ultimo_registro[p.id] = ahora
             completado = p.registrar_evento()
             guardar(s)
             if completado:
@@ -929,67 +1038,18 @@ async def main(page: ft.Page):
 
     async def accion_finalizar(_e):
         s = sesion[0]
-
-        async def confirmar(_e2):
-            cerrar_dialogo()
-            # Exportar y sincronizar
-            msg_extra = ""
-            try:
-                exportar_csv(s)
-                try:
-                    n = sincronizar_sheets(s)
-                    msg_extra = f"\n✓ {n} fila(s) enviadas a Google Sheets."
-                except Exception as ex_sheets:
-                    msg_extra = f"\n⚠ No se pudo sincronizar con Sheets:\n{ex_sheets}"
-            except Exception as ex:
-                msg_extra = f"\n⚠ Error al exportar CSV:\n{ex}"
-            # Marcar como finalizada y guardar
-            s.finalizada = True
-            guardar(s)
-            # Mostrar resultado y volver al setup
-            def ir_a_setup(_e3):
-                cerrar_dialogo()
-                mostrar_setup()
-            abrir_dialogo(ft.AlertDialog(
-                modal=True,
-                title=ft.Row(spacing=8, controls=[
-                    ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN_400, size=24),
-                    ft.Text("Sesión finalizada"),
-                ]),
-                content=ft.Text(
-                    f"Se registraron {len(s.completados())} observación(es)." + msg_extra),
-                actions=[ft.FilledButton(
-                    "Aceptar", on_click=ir_a_setup,
-                    style=ft.ButtonStyle(
-                        bgcolor=ft.Colors.BLUE_700, color=ft.Colors.WHITE),
-                )],
-                actions_alignment=ft.MainAxisAlignment.END,
-            ))
-
         activos = len(s.activos())
         advertencia = (
             f"\n\n⚠ Hay {activos} observación(es) en curso que quedarán incompletas."
             if activos else ""
         )
-        abrir_dialogo(ft.AlertDialog(
-            modal=True,
-            title=ft.Text("¿Finalizar sesión?", weight=ft.FontWeight.BOLD),
-            content=ft.Text(
-                f"Se guardarán los datos de {len(s.completados())} observación(es) "
-                f"completadas y se cerrará la sesión actual.{advertencia}"
-            ),
-            actions=[
-                ft.TextButton("Cancelar", on_click=lambda e: cerrar_dialogo()),
-                ft.FilledButton(
-                    "Finalizar y guardar",
-                    icon=ft.Icons.SAVE,
-                    style=ft.ButtonStyle(
-                        bgcolor=ft.Colors.GREEN_700, color=ft.Colors.WHITE),
-                    on_click=confirmar,
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        ))
+        dialogo_confirmar_finalizar(
+            f"Se guardarán los datos de {len(s.completados())} observación(es) "
+            f"completadas y se cerrará la sesión actual.{advertencia}",
+            lambda: finalizar_sesion(
+                s, exportar_csv,
+                f"Se registraron {len(s.completados())} observación(es)."),
+        )
 
     # Renderiza la splash de forma sincrónica y programa la navegación aparte
     _construir_splash()
